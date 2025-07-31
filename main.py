@@ -9,7 +9,7 @@ import asyncio
 import re
 
 from telegram import Update
-from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
+from telegram.ext import ApplicationBuilder, ContextTypes, TypeHandler
 from google.cloud import texttospeech
 
 # 🟡 כתיבת קובץ מפתח Google מ־BASE64
@@ -62,8 +62,6 @@ def num_to_hebrew_words(hour, minute):
     return f"{hours_map[hour_12]} {minutes_map[minute]}"
 
 def clean_text(text):
-    import re
-
     BLOCKED_PHRASES = sorted([
         "חדשות המוקד • בטלגרם: t.me/hamoked_il",
         "בוואטסאפ: https://chat.whatsapp.com/LoxVwdYOKOAH2y2kaO8GQ7",
@@ -80,7 +78,6 @@ def clean_text(text):
     text = re.sub(r'www\.\S+', '', text)
     text = re.sub(r'[^\w\s.,!?()\u0590-\u05FF]', '', text)
     text = re.sub(r'\s+', ' ', text).strip()
-
     return text
 
 # 🧠 יוצר טקסט מלא כולל שעה
@@ -93,26 +90,21 @@ def create_full_text(text):
 # 🎤 יצירת MP3 עם Google TTS
 def text_to_mp3(text, filename='output.mp3'):
     client = texttospeech.TextToSpeechClient()
-
     synthesis_input = texttospeech.SynthesisInput(text=text)
-
     voice = texttospeech.VoiceSelectionParams(
         language_code="he-IL",
         name="he-IL-Wavenet-B",
         ssml_gender=texttospeech.SsmlVoiceGender.MALE
     )
-
     audio_config = texttospeech.AudioConfig(
         audio_encoding=texttospeech.AudioEncoding.MP3,
         speaking_rate=1.2
     )
-
     response = client.synthesize_speech(
         input=synthesis_input,
         voice=voice,
         audio_config=audio_config
     )
-
     with open(filename, "wb") as out:
         out.write(response.audio_content)
 
@@ -137,24 +129,21 @@ def upload_to_ymot(wav_file_path):
         response = requests.post(url, data=data, files=files)
     print("📞 תגובת ימות:", response.text)
 
-# 🧠 עיבוד הודעה (משותף לטלגרם וערוץ)
-async def process_message(message):
+# 📥 טיפול בהודעות כולל channel_post
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message or update.channel_post
     if not message:
         return
 
     text = message.text or message.caption
     has_video = message.video is not None
 
-    FORBIDDEN_WORDS = ["להטב", "האח הגדול", "גיי", "עבירות", "קטינה", "גבר", "אירוויזיון", "אישה", "אשה בת", "קטינות", "בקטינה", "מינית", "חיים רוטר", "מיניות", "מעשה מגונה", "להטב", "להטבים", "להט\"ב", "להטב״ים","באח הגדול"]
+    # 🚫 מילים אסורות
+    FORBIDDEN_WORDS = ["להטב", "האח הגדול", "גיי", "עבירות", "קטינה", "גבר", "אירוויזיון", "אישה", "אשה בת", "קטינות", "בקטינה", "מינית", "חיים רוטר", "מיניות", "מעשה מגונה", "להטבים", "להט\"ב", "להטב״ים","באח הגדול"]
     if text:
         lowered = text.lower()
         if any(word in lowered for word in FORBIDDEN_WORDS):
             print("🚫 ההודעה לא תועלה כי מכילה מילים אסורות.")
-            return
-
-        # ❌ חסימת קישורים, למעט המותר
-        if ("http" in lowered or "www." in lowered) and "https://t.me/moshepargod" not in lowered:
-            print("🚫 ההודעה לא תועלה כי יש בה לינק לא מורשה.")
             return
 
     if has_video:
@@ -174,22 +163,13 @@ async def process_message(message):
         os.remove("output.mp3")
         os.remove("output.wav")
 
-# 📨 הודעות פרטיות
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await process_message(update.message)
-
-# 📨 פוסטים בערוץ
-async def handle_channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await process_message(update.channel_post)
-
-# ♻️ שמירה על חיים (Render)
+# ♻️ שמירה על חיים
 from keep_alive import keep_alive
 keep_alive()
 
-# ▶️ הפעלת הבוט
+# ▶️ הפעלת הבוט (עם TypeHandler שתומך גם בערוצים)
 app = ApplicationBuilder().token(BOT_TOKEN).build()
-app.add_handler(MessageHandler(filters.ALL & (~filters.COMMAND), handle_message))
-app.add_handler(MessageHandler(filters.UpdateType.CHANNEL_POST, handle_channel_post))  # מאזין לפוסטים בערוץ
+app.add_handler(TypeHandler(Update, handle_message))
 
-print("🚀 הבוט עלה! שלח טקסט, תמונה או וידאו – והוא יוקרא ויושמע בשלוחה 🎧")
+print("🚀 הבוט מאזין להודעות מערוצים! כל הודעה תועלה לשלוחה 🎧")
 app.run_polling()
