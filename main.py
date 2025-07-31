@@ -9,7 +9,7 @@ import asyncio
 import re
 
 from telegram import Update
-from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
+from telegram.ext import ApplicationBuilder, MessageHandler, ChannelPostHandler, filters, ContextTypes  # 🆕 ChannelPostHandler
 from google.cloud import texttospeech
 
 # 🟡 כתיבת קובץ מפתח Google מ־BASE64
@@ -64,7 +64,6 @@ def num_to_hebrew_words(hour, minute):
 def clean_text(text):
     import re
 
-    # רשימת ביטויים להסרה מהטקסט - מהארוך לקצר
     BLOCKED_PHRASES = sorted([
         "חדשות המוקד • בטלגרם: t.me/hamoked_il",
         "בוואטסאפ: https://chat.whatsapp.com/LoxVwdYOKOAH2y2kaO8GQ7",
@@ -74,18 +73,12 @@ def clean_text(text):
         "חדשות המוקד",
     ], key=len, reverse=True)
 
-    # הסרת ביטויים קבועים
     for phrase in BLOCKED_PHRASES:
         text = text.replace(phrase, '')
 
-    # הסרת קישורים
     text = re.sub(r'https?://\S+', '', text)
     text = re.sub(r'www\.\S+', '', text)
-
-    # הסרת אמוג'ים (תווים שאינם אותיות, ספרות, סימני פיסוק או עברית)
     text = re.sub(r'[^\w\s.,!?()\u0590-\u05FF]', '', text)
-
-    # ניקוי רווחים מיותרים
     text = re.sub(r'\s+', ' ', text).strip()
 
     return text
@@ -145,15 +138,14 @@ def upload_to_ymot(wav_file_path):
     print("📞 תגובת ימות:", response.text)
 
 # 📥 טיפול בהודעות
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message = update.message
+async def process_message(message):
     if not message:
         return
 
     text = message.text or message.caption
     has_video = message.video is not None
 
-    # 🚫 ביטול הודעות שמכילות מילים אסורות
+    # 🚫 מילים אסורות
     FORBIDDEN_WORDS = ["להטב", "האח הגדול", "גיי", "עבירות", "קטינה", "גבר", "אירוויזיון", "אישה", "אשה בת", "קטינות", "בקטינה", "מינית", "חיים רוטר", "מיניות", "מעשה מגונה", "להטב", "להטבים", "להט\"ב", "להטב״ים","באח הגדול"]
     if text:
         lowered = text.lower()
@@ -161,7 +153,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print("🚫 ההודעה לא תועלה כי מכילה מילים אסורות.")
             return
 
-    # ⬅️ שלב 1: קודם מעלים את הווידאו (כדי שיושמע אחרי)
+        # 🆕 חסימת הודעות עם לינקים – אלא אם מכילות את הקישור המותר
+        if ("http" in lowered or "www." in lowered) and "https://t.me/Moshepargod" not in lowered:
+            print("🚫 ההודעה לא תועלה כי מכילה לינק לא מאושר.")
+            return
+
+    # ⬅️ שלב 1: העלאת וידאו
     if has_video:
         video_file = await message.video.get_file()
         await video_file.download_to_drive("video.mp4")
@@ -170,7 +167,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         os.remove("video.mp4")
         os.remove("video.wav")
 
-    # ⬅️ שלב 2: עכשיו מעלים את הטקסט (כדי שיושמע ראשון)
+    # ⬅️ שלב 2: העלאת טקסט
     if text:
         cleaned = clean_text(text)
         full_text = create_full_text(cleaned)
@@ -180,6 +177,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         os.remove("output.mp3")
         os.remove("output.wav")
 
+# 🎯 טפל בהודעות פרטיות
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await process_message(update.message)
+
+# 🆕 טפל בפוסטים מערוץ
+async def handle_channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await process_message(update.channel_post)
+
 # ♻️ שמירה על חיים (Render)
 from keep_alive import keep_alive
 keep_alive()
@@ -187,6 +192,7 @@ keep_alive()
 # ▶️ הפעלת הבוט
 app = ApplicationBuilder().token(BOT_TOKEN).build()
 app.add_handler(MessageHandler(filters.ALL & (~filters.COMMAND), handle_message))
+app.add_handler(ChannelPostHandler(handle_channel_post))  # 🆕
 
 print("🚀 הבוט עלה! שלח טקסט, תמונה או וידאו – והוא יוקרא ויושמע בשלוחה 🎧")
 app.run_polling()
