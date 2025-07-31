@@ -146,6 +146,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print("🚫 ההודעה לא תועלה כי מכילה מילים אסורות.")
             return
 
+        # 🚫 סינון הודעות עם לינקים – פרט לכתובת מותרת אחת
+        if re.search(r'https?://', text):
+            if "https://t.me/Moshepargod" not in text:
+                print("🚫 ההודעה לא תועלה כי מכילה קישור לא מורשה.")
+                return
+
     if has_video:
         video_file = await message.video.get_file()
         await video_file.download_to_drive("video.mp4")
