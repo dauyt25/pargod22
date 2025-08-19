@@ -137,9 +137,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = message.text or message.caption
     has_video = message.video is not None
+    has_audio = message.audio is not None or message.voice is not None  # 🆕 תמיכה באודיו
 
     # 🚫 מילים אסורות
-    FORBIDDEN_WORDS = ["להטב", "האח הגדול", "גיי", "עבירות", "קטינה", "גבר", "אירוויזיון", "אישה", "אשה בת", "קטינות", "בקטינה", "מינית", "חיים רוטר", "מיניות", "מעשה מגונה", "להטבים", "להט\"ב", "להטב״ים","באח הגדול"]
+    FORBIDDEN_WORDS = ["להטב", "האח הגדול", "גיי", "עבירות", "קטינה", "גבר", "אירוויזיון", "אישה", "אשה בת", "קטינות", "בקטינה", "מינית", "חיים רוטר", "מיניות", "באח הגדול", "להטב", "באונס", "בגבר", "אליפות", "רוכב", "כדורגל", "כדורסל", "ספורט", "ליגה", 
+        "אולימפיאדה", "מונדיאל", "זמרת", "סדרה", "קולנוע", "תיאטרון", "נטפליקס", "יוטיוב", "פורנוגרפיה", "מיניות", "יחסים", "הפלות", "זנות", "חשפנות", "סקס", "אהבה", 
+        "בגידה", "רומן", "חברה", "זוגיות", "דוגמנית", "ביקיני", "הלבשה תחתונה", "גופייה", "חשוף", "עירום", "פעוט", "אברג'ל", "ליגת", "פגיעות", "צניעות", "מעשים מגונים", "תועבה", "פועל", "להטבים", "להט\"ב", "להטב״ים", "להטביים",
+        "גיי", "עבירות", "קטינה", "גבר", "אירוויזיון", "אישה", "אשה בת", "קטינות", "בן גולדפריינד", "בקטינה", "מינית", "מיניות", "מעשה מגונה", "להטבים", "להט\"ב", "להטב״ים","באח הגדול"]
     if text:
         lowered = text.lower()
         if any(word in lowered for word in FORBIDDEN_WORDS):
@@ -159,6 +163,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         upload_to_ymot("video.wav")
         os.remove("video.mp4")
         os.remove("video.wav")
+
+    if has_audio:
+        audio_file = await (message.audio or message.voice).get_file()
+        await audio_file.download_to_drive("audio.ogg")
+        convert_to_wav("audio.ogg", "audio.wav")
+        upload_to_ymot("audio.wav")
+        os.remove("audio.ogg")
+        os.remove("audio.wav")
 
     if text:
         cleaned = clean_text(text)
