@@ -7,7 +7,6 @@ from datetime import datetime
 import pytz
 import asyncio
 import re
-import aiohttp  # 🆕 לשימוש אסינכרוני בצינתוקים
 
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, TypeHandler
@@ -130,21 +129,24 @@ def upload_to_ymot(wav_file_path):
         response = requests.post(url, data=data, files=files)
     print("📞 תגובת ימות:", response.text)
 
-# 📞 שליחת צינתוק לרשימה (ASYNC)
-async def send_tzintuk():
+# 📞 שליחת צינתוק לרשימה (נשאר סינכרוני, עוטפים אותו בלולאה)
+def _send_tzintuk_sync():
     url = "https://www.call2all.co.il/ym/api/RunTzintuk"
     data = {
         "token": YMOT_TOKEN,
-        "tzintukList": "2020",  # ← הרשימה שלך
+        "tzintukList": "2020",  # ← שם הרשימה שלך
         "callerId": ""
     }
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, data=data) as resp:
-                text = await resp.text()
-                print("📢 תגובת צינתוק:", text)
+        response = requests.post(url, data=data, timeout=10)
+        return response.text
     except Exception as e:
-        print("❌ שגיאה בשליחת צינתוק:", str(e))
+        return f"שגיאה בשליחת צינתוק: {str(e)}"
+
+async def send_tzintuk():
+    loop = asyncio.get_running_loop()
+    text = await loop.run_in_executor(None, _send_tzintuk_sync)
+    print("📢 תגובת צינתוק:", text)
 
 # 📥 טיפול בהודעות כולל channel_post
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -154,20 +156,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = message.text or message.caption
     has_video = message.video is not None
-    has_audio = message.audio is not None or message.voice is not None  # 🆕 תמיכה באודיו
+    has_audio = message.audio is not None or message.voice is not None
 
     # 🚫 מילים אסורות
-    FORBIDDEN_WORDS = ["להטב", "האח הגדול", "גיי", "עבירות", "קטינה", "גבר", "אירוויזיון", "אישה", "אשה בת", "קטינות", "בקטינה", "מינית", "חיים רוטר", "מיניות", "באח הגדול", "להטב", "באונס", "בגבר", "אליפות", "רוכב", "כדורגל", "כדורסל", "ספורט", "ליגה", 
-        "אולימפיאדה", "מונדיאל", "זמרת", "סדרה", "קולנוע", "תיאטרון", "נטפליקס", "יוטיוב", "פורנוגרפיה", "מיניות", "יחסים", "הפלות", "זנות", "חשפנות", "סקס", "אהבה", 
-        "בגידה", "רומן", "חברה", "זוגיות", "דוגמנית", "ביקיני", "הלבשה תחתונה", "גופייה", "חשוף", "עירום", "פעוט", "אברג'ל", "ליגת", "פגיעות", "צניעות", "אנס", "האח הגדול", "נאור נרקיס", "מעשים מגונים", "תועבה", "פועל", "להטבים", "להט\"ב", "להטב״ים", "להטביים",
-        "שחקנית", "עבירות", "קטינה", "גבר", "אירוויזיון", "אישה", "אשה בת", "קטינות", "בן גולדפריינד", "בקטינה", "מינית", "מיניות", "מעשה מגונה", "להטבים", "להט\"ב", "להטב״ים","באח הגדול"]
+    FORBIDDEN_WORDS = ["להטב","האח הגדול","גיי","עבירות","קטינה","גבר","אירוויזיון","אישה","אשה בת",
+        "קטינות","בקטינה","מינית","חיים רוטר","מיניות","באח הגדול","להטב","באונס","בגבר","אליפות","רוכב",
+        "כדורגל","כדורסל","ספורט","ליגה","אולימפיאדה","מונדיאל","זמרת","סדרה","קולנוע","תיאטרון","נטפליקס",
+        "יוטיוב","פורנוגרפיה","יחסים","הפלות","זנות","חשפנות","סקס","אהבה","בגידה","רומן","חברה","זוגיות",
+        "דוגמנית","ביקיני","הלבשה תחתונה","גופייה","חשוף","עירום","פעוט","אברג'ל","ליגת","פגיעות","צניעות",
+        "אנס","נאור נרקיס","מעשים מגונים","תועבה","פועל","להטבים","להט\"ב","להטב״ים","להטביים","שחקנית",
+        "בן גולדפריינד","מעשה מגונה"]
     if text:
         lowered = text.lower()
         if any(word in lowered for word in FORBIDDEN_WORDS):
             print("🚫 ההודעה לא תועלה כי מכילה מילים אסורות.")
             return
-
-        # 🚫 סינון הודעות עם לינקים – פרט לכתובת מותרת אחת
         if re.search(r'https?://', text):
             if "https://t.me/Moshepargod" not in text:
                 print("🚫 ההודעה לא תועלה כי מכילה קישור לא מורשה.")
@@ -205,7 +208,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 from keep_alive import keep_alive
 keep_alive()
 
-# ▶️ הפעלת הבוט (עם TypeHandler שתומך גם בערוצים)
+# ▶️ הפעלת הבוט
 app = ApplicationBuilder().token(BOT_TOKEN).build()
 app.add_handler(TypeHandler(Update, handle_message))
 
