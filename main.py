@@ -129,13 +129,13 @@ def upload_to_ymot(wav_file_path):
         response = requests.post(url, data=data, files=files)
     print("📞 תגובת ימות:", response.text)
 
-# 📞 שליחת צינתוק לרשימה (נשאר סינכרוני, עוטפים אותו בלולאה)
+# 📞 שליחת צינתוק ישיר למספר
 def _send_tzintuk_sync():
-    url = "https://www.call2all.co.il/ym/api/RunTzintuk"
+    url = "https://www.call2all.co.il/ym/api/Calls/MissCall"
     data = {
         "token": YMOT_TOKEN,
-        "tzintukList": "2020",  # ← שם הרשימה שלך
-        "callerId": ""
+        "did": "YOUR_DID",      # ← 0733181406
+        "dst": "YOUR_DEST"      # ← 0583291876
     }
     try:
         response = requests.post(url, data=data, timeout=10)
@@ -213,4 +213,5 @@ app = ApplicationBuilder().token(BOT_TOKEN).build()
 app.add_handler(TypeHandler(Update, handle_message))
 
 print("🚀 הבוט מאזין להודעות מערוצים! כל הודעה תועלה לשלוחה 🎧 ותפעיל צינתוק 📞")
+
 app.run_polling()
