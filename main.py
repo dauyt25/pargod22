@@ -7,6 +7,7 @@ from datetime import datetime
 import pytz
 import asyncio
 import re
+import aiohttp  # 🆕 לשימוש אסינכרוני בצינתוקים
 
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, TypeHandler
@@ -129,17 +130,19 @@ def upload_to_ymot(wav_file_path):
         response = requests.post(url, data=data, files=files)
     print("📞 תגובת ימות:", response.text)
 
-# 📞 שליחת צינתוק לרשימה
-def send_tzintuk():
+# 📞 שליחת צינתוק לרשימה (ASYNC)
+async def send_tzintuk():
     url = "https://www.call2all.co.il/ym/api/RunTzintuk"
     data = {
         "token": YMOT_TOKEN,
-        "tzintukList": "2020",  # ← תעדכן לשם הרשימה שלך
-        "callerId": "0775517746"              # אפשר לשים מספר שיוצג או להשאיר ריק
+        "tzintukList": "2020",  # ← הרשימה שלך
+        "callerId": ""
     }
     try:
-        response = requests.post(url, data=data, timeout=10)
-        print("📢 תגובת צינתוק:", response.text)
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, data=data) as resp:
+                text = await resp.text()
+                print("📢 תגובת צינתוק:", text)
     except Exception as e:
         print("❌ שגיאה בשליחת צינתוק:", str(e))
 
@@ -154,10 +157,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     has_audio = message.audio is not None or message.voice is not None  # 🆕 תמיכה באודיו
 
     # 🚫 מילים אסורות
-    FORBIDDEN_WORDS = ["להטב", "האח הגדול", "עבירות", "קטינה", "גבר", "אירוויזיון", "אישה", "אשה בת", "קטינות", "בקטינה", "מינית", "חיים רוטר", "מיניות", "באח הגדול", "להטב", "באונס", "בגבר", "אליפות", "רוכב", "כדורגל", "כדורסל", "ספורט", "ליגה", 
+    FORBIDDEN_WORDS = ["להטב", "האח הגדול", "גיי", "עבירות", "קטינה", "גבר", "אירוויזיון", "אישה", "אשה בת", "קטינות", "בקטינה", "מינית", "חיים רוטר", "מיניות", "באח הגדול", "להטב", "באונס", "בגבר", "אליפות", "רוכב", "כדורגל", "כדורסל", "ספורט", "ליגה", 
         "אולימפיאדה", "מונדיאל", "זמרת", "סדרה", "קולנוע", "תיאטרון", "נטפליקס", "יוטיוב", "פורנוגרפיה", "מיניות", "יחסים", "הפלות", "זנות", "חשפנות", "סקס", "אהבה", 
         "בגידה", "רומן", "חברה", "זוגיות", "דוגמנית", "ביקיני", "הלבשה תחתונה", "גופייה", "חשוף", "עירום", "פעוט", "אברג'ל", "ליגת", "פגיעות", "צניעות", "אנס", "האח הגדול", "נאור נרקיס", "מעשים מגונים", "תועבה", "פועל", "להטבים", "להט\"ב", "להטב״ים", "להטביים",
-        "שחקנית", "עבירות", "קטינה", "גבר", "אירוויזיון", "אישה", "קטינות", "בן גולדפריינד", "בקטינה", "מינית", "מיניות", "מעשה מגונה", "להטבים", "להט\"ב", "להטב״ים","באח הגדול"]
+        "שחקנית", "עבירות", "קטינה", "גבר", "אירוויזיון", "אישה", "אשה בת", "קטינות", "בן גולדפריינד", "בקטינה", "מינית", "מיניות", "מעשה מגונה", "להטבים", "להט\"ב", "להטב״ים","באח הגדול"]
     if text:
         lowered = text.lower()
         if any(word in lowered for word in FORBIDDEN_WORDS):
@@ -175,7 +178,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await video_file.download_to_drive("video.mp4")
         convert_to_wav("video.mp4", "video.wav")
         upload_to_ymot("video.wav")
-        send_tzintuk()
+        await send_tzintuk()
         os.remove("video.mp4")
         os.remove("video.wav")
 
@@ -184,7 +187,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await audio_file.download_to_drive("audio.ogg")
         convert_to_wav("audio.ogg", "audio.wav")
         upload_to_ymot("audio.wav")
-        send_tzintuk()
+        await send_tzintuk()
         os.remove("audio.ogg")
         os.remove("audio.wav")
 
@@ -194,7 +197,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text_to_mp3(full_text, "output.mp3")
         convert_to_wav("output.mp3", "output.wav")
         upload_to_ymot("output.wav")
-        send_tzintuk()
+        await send_tzintuk()
         os.remove("output.mp3")
         os.remove("output.wav")
 
