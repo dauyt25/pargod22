@@ -123,7 +123,7 @@ def send_tzintuk():
     url = 'https://call2all.co.il/ym/api/RunTzintuk'
     data = {
         'token': '0733181406:80809090',
-        'callerId': 'RAND',
+        'callerId': '0772634290',
         'TzintukTimeOut': 9,
         'phones': 'tzl:2020'
     }
