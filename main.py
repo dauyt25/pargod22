@@ -118,6 +118,18 @@ def upload_to_ymot(wav_file_path):
         response = requests.post(url, data=data, files=files)
         print("📞 תגובת ימות:", response.text)
 
+# 📞 שליחת צינתוק לרשימת 2020
+def send_tzintuk():
+    url = 'https://call2all.co.il/ym/api/RunTzintuk'
+    data = {
+        'token': 0733181406:80809090,
+        'callerId': 'RAND',
+        'TzintukTimeOut': 9,
+        'phones': 'tzl:2020'
+    }
+    response = requests.post(url, data=data)
+    print("📞 תגובת צינתוק:", response.text)
+
 # 📥 טיפול בהודעות כולל channel_post
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message or update.channel_post
@@ -148,6 +160,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await video_file.download_to_drive("video.mp4")
         convert_to_wav("video.mp4", "video.wav")
         upload_to_ymot("video.wav")
+        send_tzintuk()
         os.remove("video.mp4")
         os.remove("video.wav")
 
@@ -156,6 +169,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await audio_file.download_to_drive("audio.ogg")
         convert_to_wav("audio.ogg", "audio.wav")
         upload_to_ymot("audio.wav")
+        send_tzintuk()
         os.remove("audio.ogg")
         os.remove("audio.wav")
 
@@ -165,6 +179,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text_to_mp3(full_text, "output.mp3")
         convert_to_wav("output.mp3", "output.wav")
         upload_to_ymot("output.wav")
+        send_tzintuk()
         os.remove("output.mp3")
         os.remove("output.wav")
 
