@@ -124,7 +124,7 @@ def send_tzintuk():
     data = {
         'token': '0733181406:80809090',
         'callerId': '0776473785',
-        'TzintukTimeOut': 9,
+        'TzintukTimeOut': 5,
         'phones': 'tzl:2020'
     }
     response = requests.post(url, data=data)
