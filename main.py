@@ -104,6 +104,15 @@ def convert_to_wav(input_file, output_file='output.wav'):
         'ffmpeg', '-i', input_file, '-ar', '8000', '-ac', '1', '-f', 'wav', output_file, '-y'
     ])
 
+# 🔗 חיבור שני קבצי WAV ברצף
+def concat_wav_files(file1, file2, output_file="merged.wav"):
+    subprocess.run([
+        "ffmpeg", "-y",
+        "-i", f"concat:{file1}|{file2}",
+        "-ar", "8000", "-ac", "1",
+        output_file
+    ])
+
 # 📤 העלאה לשלוחה
 def upload_to_ymot(wav_file_path):
     url = 'https://call2all.co.il/ym/api/UploadFile'
@@ -150,10 +159,30 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
     # 🚫 סינון הודעות עם לינקים – פרט לכתובת מותרת אחת
-    if re.search(r'https?://', text):
+    if text and re.search(r'https?://', text):
         if "https://t.me/Moshepargod" not in text:
             print("🚫 ההודעה לא תועלה כי מכילה קישור לא מורשה.")
             return
+
+    # 🆕 אם יש גם טקסט וגם וידאו → יוצרים קובץ אחד משולב
+    if has_video and text:
+        video_file = await message.video.get_file()
+        await video_file.download_to_drive("video.mp4")
+        convert_to_wav("video.mp4", "video.wav")
+
+        cleaned = clean_text(text)
+        full_text = create_full_text(cleaned)
+        text_to_mp3(full_text, "text.mp3")
+        convert_to_wav("text.mp3", "text.wav")
+
+        concat_wav_files("text.wav", "video.wav", "final.wav")
+        upload_to_ymot("final.wav")
+        send_tzintuk()
+
+        for f in ["video.mp4", "video.wav", "text.mp3", "text.wav", "final.wav"]:
+            if os.path.exists(f):
+                os.remove(f)
+        return
 
     if has_video:
         video_file = await message.video.get_file()
