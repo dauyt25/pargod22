@@ -7,6 +7,7 @@ from datetime import datetime
 import pytz
 import asyncio
 import re
+import time
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, TypeHandler
 from google.cloud import texttospeech
@@ -230,4 +231,16 @@ keep_alive()
 app = ApplicationBuilder().token(BOT_TOKEN).build()
 app.add_handler(TypeHandler(Update, handle_message))
 print("🚀 הבוט מאזין להודעות מערוצים! כל הודעה תועלה לשלוחה 🎧")
-app.run_polling()
+
+# ▶️ לולאת הרצה אינסופית
+while True:
+    try:
+        app.run_polling(
+            poll_interval=2.0,
+            timeout=30,
+            allowed_updates=Update.ALL_TYPES
+        )
+    except Exception as e:
+        print("❌ שגיאה כללית בהרצת הבוט:", e)
+        time.sleep(5)  # לחכות 5 שניות ואז להפעיל מחדש
+
