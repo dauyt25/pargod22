@@ -63,6 +63,11 @@ def clean_text(text):
         "לעדכוני הפרגוד בטלגרם",
         "t.me/hamoked_il",
         "בטלגרם",
+        "'הכי חם ברשת - 'הערינג",
+        "וואטצפ",
+        "טלגרם",
+        "לשליחת חומרים",
+        "053-419-0216",
         "חדשות המוקד",
     ], key=len, reverse=True)
     for phrase in BLOCKED_PHRASES:
@@ -236,11 +241,11 @@ print("🚀 הבוט מאזין להודעות מערוצים! כל הודעה �
 while True:
     try:
         app.run_polling(
-            poll_interval=2.0,
+            poll_interval=8.0,
             timeout=30,
             allowed_updates=Update.ALL_TYPES
         )
     except Exception as e:
         print("❌ שגיאה כללית בהרצת הבוט:", e)
-        time.sleep(5)  # לחכות 5 שניות ואז להפעיל מחדש
+        time.sleep(10)  # לחכות 5 שניות ואז להפעיל מחדש
 
