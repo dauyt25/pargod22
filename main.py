@@ -241,7 +241,7 @@ print("🚀 הבוט מאזין להודעות מערוצים! כל הודעה �
 while True:
     try:
         app.run_polling(
-            poll_interval=8.0,
+            poll_interval=30.0,
             timeout=30,
             allowed_updates=Update.ALL_TYPES
         )
