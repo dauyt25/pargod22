@@ -11,6 +11,17 @@ import time
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, TypeHandler
 from google.cloud import texttospeech
+import logging
+
+# 🔧 הגדרת לוגים לקובץ וגם לקונסולה
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s | %(levelname)s | %(message)s',
+    handlers=[
+        logging.FileHandler("log.txt"),
+        logging.StreamHandler()
+    ]
+)
 
 # 🔢 ספירה לשליחת צינתוק כל 5 הודעות או אחרי שעה
 tzintuk_counter = 0
@@ -144,7 +155,7 @@ def upload_to_ymot(wav_file_path):
             'autoNumbering': 'true'
         }
         response = requests.post(url, data=data, files=files)
-    print("📞 תגובת ימות:", response.text)
+    logging.info("📞 תגובת ימות:", response.text)
 
 # 📞 שליחת צינתוק לרשימת 2020
 def send_tzintuk():
@@ -156,7 +167,7 @@ def send_tzintuk():
         'phones': 'tzl:2020'
     }
     response = requests.post(url, data=data)
-    print("📞 תגובת צינתוק:", response.text)
+    logging.info("📞 תגובת צינתוק:", response.text)
 
 # 📥 טיפול בהודעות כולל channel_post
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -183,11 +194,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text:
         lowered = text.lower()
         if any(word in lowered for word in FORBIDDEN_WORDS):
-            print("🚫 ההודעה לא תועלה כי מכילה מילים אסורות.")
+            logging.info("🚫 ההודעה לא תועלה כי מכילה מילים אסורות.")
             return
         if re.search(r'https?://', text):
             if "https://t.me/Moshepargod" not in text:
-                print("🚫 ההודעה לא תועלה כי מכילה קישור לא מורשה.")
+                logging.info("🚫 ההודעה לא תועלה כי מכילה קישור לא מורשה.")
                 return
 
     # 🎥 וידאו עם טקסט
@@ -210,9 +221,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             send_tzintuk()
             tzintuk_counter = 0
             last_tzintuk_time = now
-            print("📞 נשלח צינתוק ✅")
+            logging.info("📞 נשלח צינתוק ✅")
         else:
-            print(f"⏳ צינתוק נדחה (ספירה: {tzintuk_counter}/5, עברו {int(time_since_last)} דקות)")
+            logging.info(f"⏳ צינתוק נדחה (ספירה: {tzintuk_counter}/5, עברו {int(time_since_last)} דקות)")
 
         for f in ["video.mp4", "video.wav", "text.mp3", "text.wav", "final.wav"]:
             if os.path.exists(f): os.remove(f)
@@ -231,9 +242,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             send_tzintuk()
             tzintuk_counter = 0
             last_tzintuk_time = now
-            print("📞 נשלח צינתוק ✅")
+            logging.info("📞 נשלח צינתוק ✅")
         else:
-            print(f"⏳ צינתוק נדחה (ספירה: {tzintuk_counter}/5, עברו {int(time_since_last)} דקות)")
+            logging.info(f"⏳ צינתוק נדחה (ספירה: {tzintuk_counter}/5, עברו {int(time_since_last)} דקות)")
 
         os.remove("video.mp4")
         os.remove("video.wav")
@@ -251,9 +262,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             send_tzintuk()
             tzintuk_counter = 0
             last_tzintuk_time = now
-            print("📞 נשלח צינתוק ✅")
+            logging.info("📞 נשלח צינתוק ✅")
         else:
-            print(f"⏳ צינתוק נדחה (ספירה: {tzintuk_counter}/5, עברו {int(time_since_last)} דקות)")
+            logging.info(f"⏳ צינתוק נדחה (ספירה: {tzintuk_counter}/5, עברו {int(time_since_last)} דקות)")
 
         os.remove("audio.ogg")
         os.remove("audio.wav")
@@ -272,9 +283,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             send_tzintuk()
             tzintuk_counter = 0
             last_tzintuk_time = now
-            print("📞 נשלח צינתוק ✅")
+            logging.info("📞 נשלח צינתוק ✅")
         else:
-            print(f"⏳ צינתוק נדחה (ספירה: {tzintuk_counter}/5, עברו {int(time_since_last)} דקות)")
+            logging.info(f"⏳ צינתוק נדחה (ספירה: {tzintuk_counter}/5, עברו {int(time_since_last)} דקות)")
 
         os.remove("output.mp3")
         os.remove("output.wav")
@@ -286,7 +297,7 @@ keep_alive()
 # ▶️ הפעלת הבוט (עם TypeHandler שתומך גם בערוצים)
 app = ApplicationBuilder().token(BOT_TOKEN).build()
 app.add_handler(TypeHandler(Update, handle_message))
-print("🚀 הבוט מאזין להודעות מערוצים! כל הודעה תועלה לשלוחה 🎧")
+logging.info("🚀 הבוט מאזין להודעות מערוצים! כל הודעה תועלה לשלוחה 🎧")
 
 # ▶️ לולאת הרצה אינסופית
 while True:
@@ -297,6 +308,6 @@ while True:
             allowed_updates=Update.ALL_TYPES
         )
     except Exception as e:
-        print("❌ שגיאה כללית בהרצת הבוט:", e)
+        logging.info("❌ שגיאה כללית בהרצת הבוט:", e)
         time.sleep(10)  # לחכות 5 שניות ואז להפעיל מחדש
 
