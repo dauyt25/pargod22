@@ -180,7 +180,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "אירוויזיון", "אישה", "אשה בת", "קטינות", "בן גולדפריינד", "בקטינה", "מינית",
         "מיניות", "מעשה מגונה", "להטבים", "להט\"ב", "להטב״ים","באח הגדול"
     ]
- if text:
+    if text:
         lowered = text.lower()
         if any(word in lowered for word in FORBIDDEN_WORDS):
             print("🚫 ההודעה לא תועלה כי מכילה מילים אסורות.")
