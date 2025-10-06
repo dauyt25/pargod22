@@ -3,7 +3,7 @@ import json
 import subprocess
 import requests
 import base64
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 import asyncio
 import re
@@ -11,6 +11,10 @@ import time
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, TypeHandler
 from google.cloud import texttospeech
+
+# 🔢 ספירה לשליחת צינתוק כל 5 הודעות או אחרי שעה
+tzintuk_counter = 0
+last_tzintuk_time = datetime.now() - timedelta(hours=1)
 
 # 🟡 כתיבת קובץ מפתח Google מ־BASE64
 key_b64 = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_B64")
@@ -156,6 +160,8 @@ def send_tzintuk():
 
 # 📥 טיפול בהודעות כולל channel_post
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global tzintuk_counter, last_tzintuk_time
+
     message = update.message or update.channel_post
     if not message:
         return
@@ -174,7 +180,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "אירוויזיון", "אישה", "אשה בת", "קטינות", "בן גולדפריינד", "בקטינה", "מינית",
         "מיניות", "מעשה מגונה", "להטבים", "להט\"ב", "להטב״ים","באח הגדול"
     ]
-    if text:
+ if text:
         lowered = text.lower()
         if any(word in lowered for word in FORBIDDEN_WORDS):
             print("🚫 ההודעה לא תועלה כי מכילה מילים אסורות.")
@@ -184,7 +190,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 print("🚫 ההודעה לא תועלה כי מכילה קישור לא מורשה.")
                 return
 
-    # 🎥 וידאו עם טקסט → חיבור לקובץ אחד
+    # 🎥 וידאו עם טקסט
     if has_video and text:
         video_file = await message.video.get_file()
         await video_file.download_to_drive("video.mp4")
@@ -195,7 +201,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         convert_to_wav("text.mp3", "text.wav")
         concat_wav_files("text.wav", "video.wav", "final.wav")
         upload_to_ymot("final.wav")
-        send_tzintuk()
+
+        # ✅ לוגיקת צינתוק חכמה
+        tzintuk_counter += 1
+        now = datetime.now()
+        time_since_last = (now - last_tzintuk_time).total_seconds() / 60
+        if tzintuk_counter >= 5 or time_since_last >= 60:
+            send_tzintuk()
+            tzintuk_counter = 0
+            last_tzintuk_time = now
+            print("📞 נשלח צינתוק ✅")
+        else:
+            print(f"⏳ צינתוק נדחה (ספירה: {tzintuk_counter}/5, עברו {int(time_since_last)} דקות)")
+
         for f in ["video.mp4", "video.wav", "text.mp3", "text.wav", "final.wav"]:
             if os.path.exists(f): os.remove(f)
         return
@@ -205,7 +223,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await video_file.download_to_drive("video.mp4")
         convert_to_wav("video.mp4", "video.wav")
         upload_to_ymot("video.wav")
-        send_tzintuk()
+
+        tzintuk_counter += 1
+        now = datetime.now()
+        time_since_last = (now - last_tzintuk_time).total_seconds() / 60
+        if tzintuk_counter >= 5 or time_since_last >= 60:
+            send_tzintuk()
+            tzintuk_counter = 0
+            last_tzintuk_time = now
+            print("📞 נשלח צינתוק ✅")
+        else:
+            print(f"⏳ צינתוק נדחה (ספירה: {tzintuk_counter}/5, עברו {int(time_since_last)} דקות)")
+
         os.remove("video.mp4")
         os.remove("video.wav")
 
@@ -214,7 +243,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await audio_file.download_to_drive("audio.ogg")
         convert_to_wav("audio.ogg", "audio.wav")
         upload_to_ymot("audio.wav")
-        send_tzintuk()
+
+        tzintuk_counter += 1
+        now = datetime.now()
+        time_since_last = (now - last_tzintuk_time).total_seconds() / 60
+        if tzintuk_counter >= 5 or time_since_last >= 60:
+            send_tzintuk()
+            tzintuk_counter = 0
+            last_tzintuk_time = now
+            print("📞 נשלח צינתוק ✅")
+        else:
+            print(f"⏳ צינתוק נדחה (ספירה: {tzintuk_counter}/5, עברו {int(time_since_last)} דקות)")
+
         os.remove("audio.ogg")
         os.remove("audio.wav")
 
@@ -224,7 +264,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text_to_mp3(full_text, "output.mp3")
         convert_to_wav("output.mp3", "output.wav")
         upload_to_ymot("output.wav")
-        send_tzintuk()
+
+        tzintuk_counter += 1
+        now = datetime.now()
+        time_since_last = (now - last_tzintuk_time).total_seconds() / 60
+        if tzintuk_counter >= 5 or time_since_last >= 60:
+            send_tzintuk()
+            tzintuk_counter = 0
+            last_tzintuk_time = now
+            print("📞 נשלח צינתוק ✅")
+        else:
+            print(f"⏳ צינתוק נדחה (ספירה: {tzintuk_counter}/5, עברו {int(time_since_last)} דקות)")
+
         os.remove("output.mp3")
         os.remove("output.wav")
 
