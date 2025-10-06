@@ -167,7 +167,7 @@ def send_tzintuk():
         'phones': 'tzl:2020'
     }
     response = requests.post(url, data=data)
-    logging.info("📞 תגובת צינתוק:", response.text)
+    logging.info(f"📞 תגובת צינתוק: {response.text}")
 
 # 📥 טיפול בהודעות כולל channel_post
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
