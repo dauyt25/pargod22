@@ -155,7 +155,7 @@ def upload_to_ymot(wav_file_path):
             'autoNumbering': 'true'
         }
         response = requests.post(url, data=data, files=files)
-    logging.info("📞 תגובת ימות:", response.text)
+    logging.info(f"📞 תגובת ימות: {response.text}")
 
 # 📞 שליחת צינתוק לרשימת 2020
 def send_tzintuk():
@@ -308,6 +308,6 @@ while True:
             allowed_updates=Update.ALL_TYPES
         )
     except Exception as e:
-        logging.info("❌ שגיאה כללית בהרצת הבוט:", e)
+        logging.exception("❌ שגיאה כללית בהרצת הבוט:")
         time.sleep(10)  # לחכות 5 שניות ואז להפעיל מחדש
 
