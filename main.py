@@ -75,7 +75,8 @@ def clean_text(text):
     BLOCKED_PHRASES = sorted([
         "חדשות המוקד • בטלגרם: t.me/hamoked_il",
         "בוואטסאפ: https://chat.whatsapp.com/LoxVwdYOKOAH2y2kaO8GQ7",
-        "לעדכוני הפרגוד בטלגרם",
+        "לעדכוני",
+        "בטלגרם",
         "t.me/hamoked_il",
         "בטלגרם",
         "'הכי חם ברשת - 'הערינג",
@@ -169,6 +170,20 @@ def send_tzintuk():
     response = requests.post(url, data=data)
     logging.info(f"📞 תגובת צינתוק: {response.text}")
 
+def maybe_send_tzintuk():
+    global tzintuk_counter, last_tzintuk_time
+    tzintuk_counter += 1
+    now = datetime.now()
+    time_since_last = (now - last_tzintuk_time).total_seconds() / 60
+    if tzintuk_counter >= 5 or time_since_last >= 60:
+        logging.info("📡 מנסה לשלוח צינתוק...")
+        send_tzintuk()
+        tzintuk_counter = 0
+        last_tzintuk_time = now
+        logging.info("📞 נשלח צינתוק ✅")
+    else:
+        logging.info(f"⏳ צינתוק נדחה (ספירה: {tzintuk_counter}/5, עברו {int(time_since_last)} דקות)")
+
 # 📥 טיפול בהודעות כולל channel_post
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global tzintuk_counter, last_tzintuk_time
@@ -182,13 +197,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     has_audio = message.audio is not None or message.voice is not None
 
     # 🚫 מילים אסורות
-    FORBIDDEN_WORDS = ["להטב", "האח הגדול", "עבירות", "קטינה", "אירוויזיון", "קטינות", "בקטינה", "מינית", "חיים רוטר", "מיניות", "באח הגדול", "באונס", "אליפות", "רוכב", "כדורגל", "כדורסל", "ספורט", "ליגה", "אולימפיאדה", "מונדיאל", "זמרת", "סדרה", "קולנוע", "תיאטרון", "נטפליקס", "יוטיוב",
+    FORBIDDEN_WORDS = ["להטב", "חיים רוטר", "מיניות", "יוטיוב",
         "פורנוגרפיה", "מיניות", "יחסים", "הפלות", "זנות", "חשפנות", "סקס", "אהבה",
-        "בגידה", "רומן", "חברה", "זוגיות", "דוגמנית", "ביקיני", "הלבשה תחתונה",
-        "גופייה", "חשוף", "עירום", "פעוט", "אברג'ל", "ליגת", "פגיעות", "צניעות",
-        "אנס", "האח הגדול", "נאור נרקיס", "מעשים מגונים", "תועבה", "פועל", "להטבים",
-        "להט\"ב", "להטב״ים", "להטביים", "שחקנית", "עבירות", "קטינה",
-        "אירוויזיון", "אישה", "אשה בת", "קטינות", "בן גולדפריינד", "בקטינה", "מינית",
         "מיניות", "מעשה מגונה", "להטבים", "להט\"ב", "להטב״ים","באח הגדול"
     ]
     if text:
@@ -214,16 +224,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         upload_to_ymot("final.wav")
 
         # ✅ לוגיקת צינתוק חכמה
-        tzintuk_counter += 1
-        now = datetime.now()
-        time_since_last = (now - last_tzintuk_time).total_seconds() / 60
-        if tzintuk_counter >= 5 or time_since_last >= 60:
-            send_tzintuk()
-            tzintuk_counter = 0
-            last_tzintuk_time = now
-            logging.info("📞 נשלח צינתוק ✅")
-        else:
-            logging.info(f"⏳ צינתוק נדחה (ספירה: {tzintuk_counter}/5, עברו {int(time_since_last)} דקות)")
+        maybe_send_tzintuk()
 
         for f in ["video.mp4", "video.wav", "text.mp3", "text.wav", "final.wav"]:
             if os.path.exists(f): os.remove(f)
@@ -235,16 +236,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         convert_to_wav("video.mp4", "video.wav")
         upload_to_ymot("video.wav")
 
-        tzintuk_counter += 1
-        now = datetime.now()
-        time_since_last = (now - last_tzintuk_time).total_seconds() / 60
-        if tzintuk_counter >= 5 or time_since_last >= 60:
-            send_tzintuk()
-            tzintuk_counter = 0
-            last_tzintuk_time = now
-            logging.info("📞 נשלח צינתוק ✅")
-        else:
-            logging.info(f"⏳ צינתוק נדחה (ספירה: {tzintuk_counter}/5, עברו {int(time_since_last)} דקות)")
+        maybe_send_tzintuk()    
 
         os.remove("video.mp4")
         os.remove("video.wav")
@@ -255,16 +247,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         convert_to_wav("audio.ogg", "audio.wav")
         upload_to_ymot("audio.wav")
 
-        tzintuk_counter += 1
-        now = datetime.now()
-        time_since_last = (now - last_tzintuk_time).total_seconds() / 60
-        if tzintuk_counter >= 5 or time_since_last >= 60:
-            send_tzintuk()
-            tzintuk_counter = 0
-            last_tzintuk_time = now
-            logging.info("📞 נשלח צינתוק ✅")
-        else:
-            logging.info(f"⏳ צינתוק נדחה (ספירה: {tzintuk_counter}/5, עברו {int(time_since_last)} דקות)")
+        maybe_send_tzintuk()    
 
         os.remove("audio.ogg")
         os.remove("audio.wav")
@@ -276,16 +259,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         convert_to_wav("output.mp3", "output.wav")
         upload_to_ymot("output.wav")
 
-        tzintuk_counter += 1
-        now = datetime.now()
-        time_since_last = (now - last_tzintuk_time).total_seconds() / 60
-        if tzintuk_counter >= 5 or time_since_last >= 60:
-            send_tzintuk()
-            tzintuk_counter = 0
-            last_tzintuk_time = now
-            logging.info("📞 נשלח צינתוק ✅")
-        else:
-            logging.info(f"⏳ צינתוק נדחה (ספירה: {tzintuk_counter}/5, עברו {int(time_since_last)} דקות)")
+        maybe_send_tzintuk()        
 
         os.remove("output.mp3")
         os.remove("output.wav")
