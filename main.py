@@ -53,7 +53,8 @@ def num_to_hebrew_words(hour, minute):
         0: "אפס", 1: "ודקה", 2: "ושתי דקות", 3: "ושלוש דקות", 4: "וארבע דקות",
         5: "וחמש דקות", 6: "ושש דקות", 7: "ושבע דקות", 8: "ושמונה דקות",
         9: "ותשע דקות", 10: "ועשרה", 11: "ואחת עשרה דקות", 12: "ושתים עשרה דקות",
-        13: "ושלוש עשרה דקות", 14: "וארבע עשרה דקות", 15: "ורבע", 16: "ושש עשרה דקות",
+        13: "ושלוש עשרה דקות", 14: "וארבע עשרה דקות", 15: "ורבע", 14: "וארבע עשרה דקות",
+        16: "ושש עשרה דקות",
         17: "ושבע עשרה דקות", 18: "ושמונה עשרה דקות", 19: "ותשע עשרה דקות",
         20: "ועשרים", 21: "עשרים ואחת", 22: "עשרים ושתיים", 23: "עשרים ושלוש",
         24: "עשרים וארבע", 25: "עשרים וחמש", 26: "עשרים ושש", 27: "עשרים ושבע",
@@ -73,18 +74,13 @@ def num_to_hebrew_words(hour, minute):
 
 def clean_text(text):
     BLOCKED_PHRASES = sorted([
-        "חדשות המוקד • בטלגרם: t.me/hamoked_il",
-        "בוואטסאפ: https://chat.whatsapp.com/LoxVwdYOKOAH2y2kaO8GQ7",
         "לעדכוני",
         "בטלגרם",
-        "t.me/hamoked_il",
         "בטלגרם",
         "'הכי חם ברשת - 'הערינג",
         "וואטצפ",
         "טלגרם",
         "לשליחת חומרים",
-        "053-419-0216",
-        "חדשות המוקד",
     ], key=len, reverse=True)
     for phrase in BLOCKED_PHRASES:
         text = text.replace(phrase, '')
@@ -173,8 +169,21 @@ def send_tzintuk():
 def maybe_send_tzintuk():
     global tzintuk_counter, last_tzintuk_time
     tzintuk_counter += 1
-    now = datetime.now()
+    
+    # 1. Get Jerusalem time for the hour check
+    tz = pytz.timezone('Asia/Jerusalem')
+    now_tz = datetime.now(tz) 
+    current_hour = now_tz.hour
+
+    # 🚫 בדיקת שעות לילה (12:00 בלילה עד 8:00 בבוקר)
+    if 0 <= current_hour < 8:
+        logging.info(f"😴 צינתוק נדחה עקב שעות לילה (בין 00:00 ל-08:00). השעה הנוכחית: {current_hour:02d}:00. ספירה: {tzintuk_counter}/5")
+        return # יציאה מהפונקציה בלי לשלוח צינתוק
+        
+    # 2. Use naive datetime for counter logic continuity (as last_tzintuk_time is naive)
+    now = datetime.now() 
     time_since_last = (now - last_tzintuk_time).total_seconds() / 60
+    
     if tzintuk_counter >= 5 or time_since_last >= 60:
         logging.info("📡 מנסה לשלוח צינתוק...")
         send_tzintuk()
@@ -196,16 +205,48 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     has_video = message.video is not None
     has_audio = message.audio is not None or message.voice is not None
 
-    # 🚫 מילים אסורות
-    FORBIDDEN_WORDS = ["להטב", "חיים רוטר", "מיניות", "יוטיוב",
-        "פורנוגרפיה", "מיניות", "יחסים", "הפלות", "זנות", "חשפנות", "סקס", "אהבה",
-        "מיניות", "מעשה מגונה", "להטבים", "להט\"ב", "להטב״ים","באח הגדול"
-    ]
     if text:
+        # 📌 תוספת חדשה: רשימת הלבנה למספרי טלפון
+        WHITELISTED_PHONES = ["053-419-0216", "050-123-4567"] 
+        # Regex לזיהוי מספרים ישראליים נפוצים (10 או 9 ספרות, עם/בלי מקפים/רווחים)
+        PHONE_PATTERN = r'(0\d{1,2}[-.\s]?\d{3}[-.\s]?\d{4})'
+
+        # 🚫 מילים אסורות
+        FORBIDDEN_WORDS = ["להטב", "חיים רוטר", "מיניות", "יוטיוב",
+            "פורנוגרפיה", "עבירות", "טיקטוק", "זנות", "חשפנות", "סקס", "אהבה",
+            "מעשה מגונה", "להטבים", "להט\"ב", "להטב״ים","באח הגדול"
+        ]
+        
         lowered = text.lower()
         if any(word in lowered for word in FORBIDDEN_WORDS):
             logging.info("🚫 ההודעה לא תועלה כי מכילה מילים אסורות.")
             return
+
+        # 📞 בדיקת מספרי טלפון לא מורשים
+        # מנרמל את הטקסט להסרת מפרידים לפני בדיקת המספרים
+        normalized_text = re.sub(r'[-.\s]', '', text) 
+        found_phones = re.findall(PHONE_PATTERN, text)
+        
+        should_reject_phone = False
+        for phone in found_phones:
+            # מנרמל גם את המספרים שנמצאו וגם את הווייטליסט לבדיקה מדויקת
+            normalized_found_phone = re.sub(r'\D', '', phone)
+            
+            is_whitelisted = False
+            for wl_phone in WHITELISTED_PHONES:
+                if normalized_found_phone == re.sub(r'\D', '', wl_phone):
+                    is_whitelisted = True
+                    break
+
+            if not is_whitelisted:
+                should_reject_phone = True
+                break
+        
+        if should_reject_phone:
+            logging.info(f"🚫 ההודעה לא תועלה כי מכילה מספר טלפון לא מורשה.")
+            return
+        # 🔚 סוף תוספת מספרי טלפון
+
         if re.search(r'https?://', text):
             if "https://t.me/Moshepargod" not in text:
                 logging.info("🚫 ההודעה לא תועלה כי מכילה קישור לא מורשה.")
@@ -284,4 +325,3 @@ while True:
     except Exception as e:
         logging.exception("❌ שגיאה כללית בהרצת הבוט:")
         time.sleep(10)  # לחכות 5 שניות ואז להפעיל מחדש
-
