@@ -213,7 +213,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # 🚫 מילים אסורות
         FORBIDDEN_WORDS = ["להטב", "חיים רוטר", "מיניות", "יוטיוב",
-            "פורנוגרפיה", "עבירות", "טיקטוק", "זנות", "חשפנות", "סקס", "אהבה",
+            "פורנוגרפיה", "עבירות", "טיקטוק", "זנות", "זמני כניסת", "אינסטגרם", "מעשים מגונים", "חשפנות", "סקס",
             "מעשה מגונה", "להטבים", "להט\"ב", "להטב״ים","באח הגדול"
         ]
         
