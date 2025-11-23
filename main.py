@@ -12,7 +12,6 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, TypeHandler
 from google.cloud import texttospeech
 import logging
-import google.generativeai as genai
 
 # 🔧 הגדרת לוגים לקובץ וגם לקונסולה
 logging.basicConfig(
@@ -28,7 +27,7 @@ logging.basicConfig(
 tzintuk_counter = 0
 last_tzintuk_time = datetime.now() - timedelta(hours=1)
 
-# 🟡 כתיבת קובץ מפתח Google מ־BASE64 (עבור TTS)
+# 🟡 כתיבת קובץ מפתח Google מ־BASE64
 key_b64 = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_B64")
 if not key_b64:
     raise Exception("❌ משתנה GOOGLE_APPLICATION_CREDENTIALS_B64 לא מוגדר או ריק")
@@ -43,52 +42,6 @@ except Exception as e:
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 YMOT_TOKEN = os.getenv("YMOT_TOKEN")
 YMOT_PATH = os.getenv("YMOT_PATH", "ivr2:95/")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") 
-
-# 🧠 הגדרת ג'מיני
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-else:
-    logging.warning("⚠️ לא הוגדר מפתח GEMINI_API_KEY! הסינון לא יעבוד.")
-
-# 🤖 פונקציה לבדיקת תוכן מול ג'מיני
-async def check_content_with_gemini(text):
-    if not GEMINI_API_KEY:
-        return True 
-
-    try:
-        model = genai.GenerativeModel("gemini-2.0-flash") 
-        
-        # 📂 קריאת ההוראות מקובץ חיצוני
-        try:
-            with open("gemini_prompt.txt", "r", encoding="utf-8") as f:
-                prompt_instructions = f.read()
-        except FileNotFoundError:
-            logging.error("⚠️ קובץ ההוראות gemini_prompt.txt לא נמצא! משתמש בהוראות ברירת מחדל.")
-            prompt_instructions = "סווג את ההודעה הבאה. השב APPROVE אם היא הולמת ו-BLOCK אם לא."
-
-        # בניית ה-Prompt הסופי
-        full_prompt = f"""
-        {prompt_instructions}
-        
-        הטקסט לבדיקה: "{text}"
-        
-        אם ההודעה תקינה ומותרת לשידור, השב רק במילה אחת: APPROVE
-        אם ההודעה מכילה תוכן בעייתי, השב רק במילה אחת: BLOCK
-        """
-        
-        response = await model.generate_content_async(full_prompt)
-        answer = response.text.strip().upper()
-        
-        logging.info(f"🤖 בדיקת ג'מיני: {answer} עבור הטקסט: {text[:30]}...")
-        
-        if "BLOCK" in answer:
-            return False
-        return True
-
-    except Exception as e:
-        logging.error(f"❌ שגיאה בבדיקת ג'מיני: {e}")
-        return True 
 
 # 🔢 המרת מספרים לעברית
 def num_to_hebrew_words(hour, minute):
@@ -187,22 +140,19 @@ def concat_wav_files(file1, file2, output_file="merged.wav"):
     os.remove(tmp2)
     os.remove("list.txt")
 
-# 📤 העלאה לשלוחה - מעודכן לקבל נתיב דינמי
-def upload_to_ymot(wav_file_path, target_path=None):
-    # אם לא סופק נתיב, השתמש בנתיב הראשי
-    final_path = target_path if target_path else YMOT_PATH
-    
+# 📤 העלאה לשלוחה
+def upload_to_ymot(wav_file_path):
     url = 'https://call2all.co.il/ym/api/UploadFile'
     with open(wav_file_path, 'rb') as f:
         files = {'file': (os.path.basename(wav_file_path), f, 'audio/wav')}
         data = {
             'token': YMOT_TOKEN,
-            'path': final_path,
+            'path': YMOT_PATH,
             'convertAudio': '1',
             'autoNumbering': 'true'
         }
         response = requests.post(url, data=data, files=files)
-    logging.info(f"📞 תגובת ימות ({final_path}): {response.text}")
+    logging.info(f"📞 תגובת ימות: {response.text}")
 
 # 📞 שליחת צינתוק לרשימת 2020
 def send_tzintuk():
@@ -225,11 +175,12 @@ def maybe_send_tzintuk():
     now_tz = datetime.now(tz) 
     current_hour = now_tz.hour
 
-    # 🚫 בדיקת שעות לילה
+    # 🚫 בדיקת שעות לילה (12:00 בלילה עד 8:00 בבוקר)
     if 0 <= current_hour < 8:
-        logging.info(f"😴 צינתוק נדחה עקב שעות לילה (בין 00:00 ל-08:00).")
-        return 
+        logging.info(f"😴 צינתוק נדחה עקב שעות לילה (בין 00:00 ל-08:00). השעה הנוכחית: {current_hour:02d}:00. ספירה: {tzintuk_counter}/5")
+        return # יציאה מהפונקציה בלי לשלוח צינתוק
         
+    # 2. Use naive datetime for counter logic continuity (as last_tzintuk_time is naive)
     now = datetime.now() 
     time_since_last = (now - last_tzintuk_time).total_seconds() / 60
     
@@ -242,7 +193,7 @@ def maybe_send_tzintuk():
     else:
         logging.info(f"⏳ צינתוק נדחה (ספירה: {tzintuk_counter}/5, עברו {int(time_since_last)} דקות)")
 
-# 📥 טיפול בהודעות
+# 📥 טיפול בהודעות כולל channel_post
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global tzintuk_counter, last_tzintuk_time
 
@@ -254,25 +205,39 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     has_video = message.video is not None
     has_audio = message.audio is not None or message.voice is not None
 
-    # משתנה לקביעת לאן להעלות (ברירת מחדל: לשלוחה הרגילה)
-    upload_target_path = YMOT_PATH
-
     if text:
+        # 📌 תוספת חדשה: רשימת הלבנה למספרי טלפון
         WHITELISTED_PHONES = ["053-419-0216", "050-123-4567"] 
+        # Regex לזיהוי מספרים ישראליים נפוצים (10 או 9 ספרות, עם/בלי מקפים/רווחים)
         PHONE_PATTERN = r'(0\d{1,2}[-.\s]?\d{3}[-.\s]?\d{4})'
+
+        # 🚫 מילים אסורות
+        FORBIDDEN_WORDS = ["להטב", "חיים רוטר", "מיניות", "יוטיוב",
+            "פורנוגרפיה", "עבירות", "טיקטוק", "זנות", "זמני כניסת", "אינסטגרם", "מעשים מגונים", "חשפנות", "סקס",
+            "מעשה מגונה", "להטבים", "להט\"ב", "להטב״ים","באח הגדול"
+        ]
         
-        # 1. בדיקת מספרי טלפון (קשיחה - נשארת חסימה מוחלטת)
+        lowered = text.lower()
+        if any(word in lowered for word in FORBIDDEN_WORDS):
+            logging.info("🚫 ההודעה לא תועלה כי מכילה מילים אסורות.")
+            return
+
+        # 📞 בדיקת מספרי טלפון לא מורשים
+        # מנרמל את הטקסט להסרת מפרידים לפני בדיקת המספרים
         normalized_text = re.sub(r'[-.\s]', '', text) 
         found_phones = re.findall(PHONE_PATTERN, text)
         
         should_reject_phone = False
         for phone in found_phones:
+            # מנרמל גם את המספרים שנמצאו וגם את הווייטליסט לבדיקה מדויקת
             normalized_found_phone = re.sub(r'\D', '', phone)
+            
             is_whitelisted = False
             for wl_phone in WHITELISTED_PHONES:
                 if normalized_found_phone == re.sub(r'\D', '', wl_phone):
                     is_whitelisted = True
                     break
+
             if not is_whitelisted:
                 should_reject_phone = True
                 break
@@ -280,16 +245,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if should_reject_phone:
             logging.info(f"🚫 ההודעה לא תועלה כי מכילה מספר טלפון לא מורשה.")
             return
+        # 🔚 סוף תוספת מספרי טלפון
 
-        # 2. בדיקת תוכן באמצעות ג'מיני
-        # אם התוכן לא מאושר - משנים את נתיב ההעלאה ל-998
-        is_content_safe = await check_content_with_gemini(text)
-        if not is_content_safe:
-             logging.info("🚫 ג'מיני סימן את ההודעה כבעייתית. היא תועלה לשלוחה 998.")
-             upload_target_path = "ivr2:998/" 
-             # שינוי: לא עושים return אלא ממשיכים עם נתיב חדש
-
-        # 3. בדיקת קישורים (קשיחה - נשארת חסימה מוחלטת)
         if re.search(r'https?://', text):
             if "https://t.me/Moshepargod" not in text:
                 logging.info("🚫 ההודעה לא תועלה כי מכילה קישור לא מורשה.")
@@ -305,59 +262,45 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text_to_mp3(full_text, "text.mp3")
         convert_to_wav("text.mp3", "text.wav")
         concat_wav_files("text.wav", "video.wav", "final.wav")
-        
-        # מעבירים את הנתיב הדינמי (או הראשי או 998)
-        upload_to_ymot("final.wav", upload_target_path)
+        upload_to_ymot("final.wav")
 
-        # צינתוק נשלח רק אם זה הנתיב הראשי
-        if upload_target_path == YMOT_PATH:
-            maybe_send_tzintuk()
+        # ✅ לוגיקת צינתוק חכמה
+        maybe_send_tzintuk()
 
         for f in ["video.mp4", "video.wav", "text.mp3", "text.wav", "final.wav"]:
             if os.path.exists(f): os.remove(f)
         return
 
-    # וידאו ללא טקסט
     if has_video:
         video_file = await message.video.get_file()
         await video_file.download_to_drive("video.mp4")
         convert_to_wav("video.mp4", "video.wav")
-        
-        # אם אין טקסט, ג'מיני לא בדק, אז זה עולה לראשי
-        upload_to_ymot("video.wav", YMOT_PATH)
+        upload_to_ymot("video.wav")
 
         maybe_send_tzintuk()    
 
         os.remove("video.mp4")
         os.remove("video.wav")
 
-    # אודיו
     if has_audio:
         audio_file = await (message.audio or message.voice).get_file()
         await audio_file.download_to_drive("audio.ogg")
         convert_to_wav("audio.ogg", "audio.wav")
-        
-        # אם אין טקסט, ג'מיני לא בדק, אז זה עולה לראשי
-        upload_to_ymot("audio.wav", YMOT_PATH)
+        upload_to_ymot("audio.wav")
 
         maybe_send_tzintuk()    
 
         os.remove("audio.ogg")
         os.remove("audio.wav")
 
-    # טקסט בלבד
     if text:
         cleaned = clean_text(text)
         full_text = create_full_text(cleaned)
         text_to_mp3(full_text, "output.mp3")
         convert_to_wav("output.mp3", "output.wav")
-        
-        # מעבירים את הנתיב הדינמי (או הראשי או 998)
-        upload_to_ymot("output.wav", upload_target_path)
+        upload_to_ymot("output.wav")
 
-        # צינתוק נשלח רק אם זה הנתיב הראשי
-        if upload_target_path == YMOT_PATH:
-            maybe_send_tzintuk()        
+        maybe_send_tzintuk()        
 
         os.remove("output.mp3")
         os.remove("output.wav")
@@ -366,11 +309,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 from keep_alive import keep_alive
 keep_alive()
 
-# ▶️ הפעלת הבוט
+# ▶️ הפעלת הבוט (עם TypeHandler שתומך גם בערוצים)
 app = ApplicationBuilder().token(BOT_TOKEN).build()
 app.add_handler(TypeHandler(Update, handle_message))
-logging.info("🚀 הבוט מאזין להודעות מערוצים! 🎧")
+logging.info("🚀 הבוט מאזין להודעות מערוצים! כל הודעה תועלה לשלוחה 🎧")
 
+# ▶️ לולאת הרצה אינסופית
 while True:
     try:
         app.run_polling(
@@ -380,4 +324,4 @@ while True:
         )
     except Exception as e:
         logging.exception("❌ שגיאה כללית בהרצת הבוט:")
-        time.sleep(10)
+        time.sleep(10)  # לחכות 5 שניות ואז להפעיל מחדש
