@@ -4,7 +4,7 @@ import subprocess
 import requests
 import base64
 from datetime import datetime, timedelta
-import pytz
+from zoneinfo import ZoneInfo
 import asyncio
 import re
 import time
@@ -139,7 +139,7 @@ def clean_text(text):
 
 # 🧠 יוצר טקסט מלא כולל שעה
 def create_full_text(text):
-    tz = pytz.timezone('Asia/Jerusalem')
+    tz = ZoneInfo('Asia/Jerusalem')
     now = datetime.now(tz)
     hebrew_time = num_to_hebrew_words(now.hour, now.minute)
     return f"{hebrew_time} בחדשות המגזר. {text}"
@@ -221,7 +221,7 @@ def maybe_send_tzintuk():
     tzintuk_counter += 1
     
     # 1. Get Jerusalem time for the hour check
-    tz = pytz.timezone('Asia/Jerusalem')
+    tz = ZoneInfo('Asia/Jerusalem')
     now_tz = datetime.now(tz) 
     current_hour = now_tz.hour
 
