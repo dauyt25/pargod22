@@ -221,7 +221,7 @@ def send_tzintuk():
         'token': '0733181406:80809090',
         'callerId': '035409272',
         'TzintukTimeOut': 5,
-        'phones': 'tzl:2020'
+        'phones': 'tzl:8999'
     }
     response = requests.post(url, data=data)
     logging.info(f"📞 תגובת צינתוק: {response.text}")
