@@ -67,23 +67,33 @@ async def check_content_with_gemini(text):
             logging.error("⚠️ קובץ ההוראות gemini_prompt.txt לא נמצא! משתמש בהוראות ברירת מחדל.")
             prompt_instructions = "סווג את ההודעה הבאה. השב APPROVE אם היא הולמת ו-BLOCK אם לא."
 
-        # בניית ה-Prompt הסופי
+        # בניית ה-Prompt הסופי - מעודכן לבקשת סיבה
         full_prompt = f"""
         {prompt_instructions}
         
         הטקסט לבדיקה: "{text}"
         
-        אם ההודעה תקינה ומותרת לשידור, השב רק במילה אחת: APPROVE
-        אם ההודעה מכילה תוכן בעייתי, השב רק במילה אחת: BLOCK
+        הוראות מתן תשובה (קריטי):
+        1. אם ההודעה תקינה ומותרת לשידור, השב רק במילה אחת: APPROVE
+        2. אם ההודעה מכילה תוכן בעייתי, השב בפורמט הבא בדיוק: BLOCK: [כתוב כאן את המילה או המשפט הבעייתי]
+           לדוגמה: BLOCK: המילה 'אינסטגרם' אסורה
         """
         
         response = await model.generate_content_async(full_prompt)
-        answer = response.text.strip().upper()
+        answer = response.text.strip() # הורדתי את .upper() כדי לשמור על קריאות הסיבה בעברית
         
-        logging.info(f"🤖 בדיקת ג'מיני: {answer} עבור הטקסט: {text[:30]}...")
+        # לוג כללי של התשובה הגולמית
+        logging.info(f"🤖 תשובת ג'מיני המלאה: {answer}")
         
-        if "BLOCK" in answer:
+        if answer.upper().startswith("BLOCK"):
+            # חילוץ הסיבה מתוך התשובה
+            reason = "סיבה לא פורטה"
+            if ":" in answer:
+                reason = answer.split(":", 1)[1].strip()
+            
+            logging.info(f"❌ ג'מיני חסם את ההודעה. הסיבה שזוהתה: '{reason}'")
             return False
+            
         return True
 
     except Exception as e:
@@ -285,9 +295,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # אם התוכן לא מאושר - משנים את נתיב ההעלאה ל-998
         is_content_safe = await check_content_with_gemini(text)
         if not is_content_safe:
-             logging.info("🚫 ג'מיני סימן את ההודעה כבעייתית. היא תועלה לשלוחה 998.")
+             logging.info("🚫 ג'מיני סימן את ההודעה כבעייתית (ראה לוג למעלה לסיבה). היא תועלה לשלוחה 998.")
              upload_target_path = "ivr2:998/" 
-             # שינוי: לא עושים return אלא ממשיכים עם נתיב חדש
 
         # 3. בדיקת קישורים (קשיחה - נשארת חסימה מוחלטת)
         if re.search(r'https?://', text):
