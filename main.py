@@ -296,7 +296,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         is_content_safe = await check_content_with_gemini(text)
         if not is_content_safe:
              logging.info("🚫 ג'מיני סימן את ההודעה כבעייתית (ראה לוג למעלה לסיבה). היא תועלה לשלוחה 998.")
-             upload_target_path = "ivr2:998/" 
+             upload_target_path = "ivr2:95/" 
 
         # 3. בדיקת קישורים (קשיחה - נשארת חסימה מוחלטת)
         if re.search(r'https?://', text):
