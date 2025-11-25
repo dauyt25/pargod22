@@ -3,7 +3,7 @@ import json
 import subprocess
 import requests
 import base64
-from datetime import datetime, timedelta
+from datetime import datetime
 from zoneinfo import ZoneInfo
 import asyncio
 import re
@@ -24,9 +24,8 @@ logging.basicConfig(
     ]
 )
 
-# 🔢 ספירה לשליחת צינתוק כל 5 הודעות או אחרי שעה
-tzintuk_counter = 0
-last_tzintuk_time = datetime.now() - timedelta(hours=1)
+# 🔒 מנעול לעיבוד הודעות - מונע קריסה עקב עומס זיכרון ב-Render
+processing_lock = asyncio.Lock()
 
 # 🟡 כתיבת קובץ מפתח Google מ־BASE64 (עבור TTS)
 key_b64 = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_B64")
@@ -45,20 +44,20 @@ YMOT_TOKEN = os.getenv("YMOT_TOKEN")
 YMOT_PATH = os.getenv("YMOT_PATH", "ivr2:95/")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") 
 
-# 🧠 הגדרת ג'מיני
+# 🧠 הגדרת ג'מיני (נטען פעם אחת בלבד כדי לחסוך זיכרון)
+model = None
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
+    model = genai.GenerativeModel("gemini-2.0-flash")
 else:
     logging.warning("⚠️ לא הוגדר מפתח GEMINI_API_KEY! הסינון לא יעבוד.")
 
 # 🤖 פונקציה לבדיקת תוכן מול ג'מיני
 async def check_content_with_gemini(text):
-    if not GEMINI_API_KEY:
+    if not GEMINI_API_KEY or not model:
         return True 
 
     try:
-        model = genai.GenerativeModel("gemini-2.0-flash") 
-        
         # 📂 קריאת ההוראות מקובץ חיצוני
         try:
             with open("gemini_prompt.txt", "r", encoding="utf-8") as f:
@@ -67,7 +66,7 @@ async def check_content_with_gemini(text):
             logging.error("⚠️ קובץ ההוראות gemini_prompt.txt לא נמצא! משתמש בהוראות ברירת מחדל.")
             prompt_instructions = "סווג את ההודעה הבאה. השב APPROVE אם היא הולמת ו-BLOCK אם לא."
 
-        # בניית ה-Prompt הסופי - מעודכן לבקשת סיבה
+        # בניית ה-Prompt הסופי
         full_prompt = f"""
         {prompt_instructions}
         
@@ -80,13 +79,11 @@ async def check_content_with_gemini(text):
         """
         
         response = await model.generate_content_async(full_prompt)
-        answer = response.text.strip() # הורדתי את .upper() כדי לשמור על קריאות הסיבה בעברית
+        answer = response.text.strip()
         
-        # לוג כללי של התשובה הגולמית
         logging.info(f"🤖 תשובת ג'מיני המלאה: {answer}")
         
         if answer.upper().startswith("BLOCK"):
-            # חילוץ הסיבה מתוך התשובה
             reason = "סיבה לא פורטה"
             if ":" in answer:
                 reason = answer.split(":", 1)[1].strip()
@@ -214,162 +211,128 @@ def upload_to_ymot(wav_file_path, target_path=None):
         response = requests.post(url, data=data, files=files)
     logging.info(f"📞 תגובת ימות ({final_path}): {response.text}")
 
-# 📞 שליחת צינתוק לרשימת 2020
-def send_tzintuk():
-    url = 'https://call2all.co.il/ym/api/RunTzintuk'
-    data = {
-        'token': '0733181406:80809090',
-        'callerId': '035409272',
-        'TzintukTimeOut': 5,
-        'phones': 'tzl:8999'
-    }
-    response = requests.post(url, data=data)
-    logging.info(f"📞 תגובת צינתוק: {response.text}")
-
-def maybe_send_tzintuk():
-    global tzintuk_counter, last_tzintuk_time
-    tzintuk_counter += 1
-    
-    # 1. Get Jerusalem time for the hour check
-    tz = ZoneInfo('Asia/Jerusalem')
-    now_tz = datetime.now(tz) 
-    current_hour = now_tz.hour
-
-    # 🚫 בדיקת שעות לילה
-    if 0 <= current_hour < 8:
-        logging.info(f"😴 צינתוק נדחה עקב שעות לילה (בין 00:00 ל-08:00).")
-        return 
-        
-    now = datetime.now() 
-    time_since_last = (now - last_tzintuk_time).total_seconds() / 60
-    
-    if tzintuk_counter >= 5 or time_since_last >= 60:
-        logging.info("📡 מנסה לשלוח צינתוק...")
-        send_tzintuk()
-        tzintuk_counter = 0
-        last_tzintuk_time = now
-        logging.info("📞 נשלח צינתוק ✅")
-    else:
-        logging.info(f"⏳ צינתוק נדחה (ספירה: {tzintuk_counter}/5, עברו {int(time_since_last)} דקות)")
-
 # 📥 טיפול בהודעות
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global tzintuk_counter, last_tzintuk_time
+    # 🛑 נעילת התהליך: רק הודעה אחת מעובדת בכל רגע נתון
+    async with processing_lock:
 
-    message = update.message or update.channel_post
-    if not message:
-        return
-
-    text = message.text or message.caption
-    has_video = message.video is not None
-    has_audio = message.audio is not None or message.voice is not None
-
-    # משתנה לקביעת לאן להעלות (ברירת מחדל: לשלוחה הרגילה)
-    upload_target_path = YMOT_PATH
-
-    if text:
-        WHITELISTED_PHONES = ["053-419-0216", "050-123-4567"] 
-        PHONE_PATTERN = r'(0\d{1,2}[-.\s]?\d{3}[-.\s]?\d{4})'
-        
-        # 1. בדיקת מספרי טלפון (קשיחה - נשארת חסימה מוחלטת)
-        normalized_text = re.sub(r'[-.\s]', '', text) 
-        found_phones = re.findall(PHONE_PATTERN, text)
-        
-        should_reject_phone = False
-        for phone in found_phones:
-            normalized_found_phone = re.sub(r'\D', '', phone)
-            is_whitelisted = False
-            for wl_phone in WHITELISTED_PHONES:
-                if normalized_found_phone == re.sub(r'\D', '', wl_phone):
-                    is_whitelisted = True
-                    break
-            if not is_whitelisted:
-                should_reject_phone = True
-                break
-        
-        if should_reject_phone:
-            logging.info(f"🚫 ההודעה לא תועלה כי מכילה מספר טלפון לא מורשה.")
+        message = update.message or update.channel_post
+        if not message:
             return
 
-        # 2. בדיקת תוכן באמצעות ג'מיני
-        # אם התוכן לא מאושר - משנים את נתיב ההעלאה ל-998
-        is_content_safe = await check_content_with_gemini(text)
-        if not is_content_safe:
-             logging.info("🚫 ג'מיני סימן את ההודעה כבעייתית (ראה לוג למעלה לסיבה). היא תועלה לשלוחה 998.")
-             upload_target_path = "ivr2:95/" 
+        text = message.text or message.caption
+        has_video = message.video is not None
+        has_audio = message.audio is not None or message.voice is not None
 
-        # 3. בדיקת קישורים (קשיחה - נשארת חסימה מוחלטת)
-        if re.search(r'https?://', text):
-            if "https://t.me/Moshepargod" not in text:
-                logging.info("🚫 ההודעה לא תועלה כי מכילה קישור לא מורשה.")
+        # ברירת מחדל: לשלוחה הראשית
+        upload_target_path = YMOT_PATH
+
+        # ---------------------------------------------------------
+        # שלב 1: בדיקות חסימה "קשות" (טלפונים, קישורים)
+        # זה מתבצע תמיד אם יש טקסט, גם אם יש וידאו
+        # ---------------------------------------------------------
+        if text:
+            WHITELISTED_PHONES = ["053-419-0216", "050-123-4567"] 
+            PHONE_PATTERN = r'(0\d{1,2}[-.\s]?\d{3}[-.\s]?\d{4})'
+            
+            normalized_text = re.sub(r'[-.\s]', '', text) 
+            found_phones = re.findall(PHONE_PATTERN, text)
+            
+            should_reject_phone = False
+            for phone in found_phones:
+                normalized_found_phone = re.sub(r'\D', '', phone)
+                is_whitelisted = False
+                for wl_phone in WHITELISTED_PHONES:
+                    if normalized_found_phone == re.sub(r'\D', '', wl_phone):
+                        is_whitelisted = True
+                        break
+                if not is_whitelisted:
+                    should_reject_phone = True
+                    break
+            
+            if should_reject_phone:
+                logging.info(f"🚫 ההודעה לא תועלה כי מכילה מספר טלפון לא מורשה.")
                 return
 
-    # 🎥 וידאו עם טקסט
-    if has_video and text:
-        video_file = await message.video.get_file()
-        await video_file.download_to_drive("video.mp4")
-        convert_to_wav("video.mp4", "video.wav")
-        cleaned = clean_text(text)
-        full_text = create_full_text(cleaned)
-        text_to_mp3(full_text, "text.mp3")
-        convert_to_wav("text.mp3", "text.wav")
-        concat_wav_files("text.wav", "video.wav", "final.wav")
-        
-        # מעבירים את הנתיב הדינמי (או הראשי או 998)
-        upload_to_ymot("final.wav", upload_target_path)
+            if re.search(r'https?://', text):
+                if "https://t.me/Moshepargod" not in text:
+                    logging.info("🚫 ההודעה לא תועלה כי מכילה קישור לא מורשה.")
+                    return
 
-        # צינתוק נשלח רק אם זה הנתיב הראשי
-        if upload_target_path == YMOT_PATH:
-            maybe_send_tzintuk()
+        # ---------------------------------------------------------
+        # שלב 2: קביעת נתיב העלאה לפי סוג ההודעה
+        # ---------------------------------------------------------
 
-        for f in ["video.mp4", "video.wav", "text.mp3", "text.wav", "final.wav"]:
-            if os.path.exists(f): os.remove(f)
-        return
+        # מקרה א': יש גם וידאו וגם טקסט -> תמיד ל-95 (לפי בקשה)
+        if has_video and text:
+            upload_target_path = "ivr2:95/"
+            logging.info("📹 זוהתה הודעת וידאו+טקסט. מוגדרת אוטומטית לשלוחה 95.")
 
-    # וידאו ללא טקסט
-    if has_video:
-        video_file = await message.video.get_file()
-        await video_file.download_to_drive("video.mp4")
-        convert_to_wav("video.mp4", "video.wav")
-        
-        # אם אין טקסט, ג'מיני לא בדק, אז זה עולה לראשי
-        upload_to_ymot("video.wav", YMOT_PATH)
+        # מקרה ב': רק טקסט -> בדיקת ג'מיני
+        elif text and not has_video:
+            is_content_safe = await check_content_with_gemini(text)
+            if not is_content_safe:
+                logging.info("🚫 ג'מיני סימן את ההודעה כבעייתית. היא תועלה לשלוחה 95.")
+                upload_target_path = "ivr2:95/" 
 
-        maybe_send_tzintuk()    
+        # מקרה ג': וידאו בלבד או אודיו בלבד -> נשאר בברירת מחדל (95)
 
-        os.remove("video.mp4")
-        os.remove("video.wav")
+        # ---------------------------------------------------------
+        # שלב 3: עיבוד והעלאה
+        # ---------------------------------------------------------
 
-    # אודיו
-    if has_audio:
-        audio_file = await (message.audio or message.voice).get_file()
-        await audio_file.download_to_drive("audio.ogg")
-        convert_to_wav("audio.ogg", "audio.wav")
-        
-        # אם אין טקסט, ג'מיני לא בדק, אז זה עולה לראשי
-        upload_to_ymot("audio.wav", YMOT_PATH)
+        # 🎥 וידאו עם טקסט
+        if has_video and text:
+            video_file = await message.video.get_file()
+            await video_file.download_to_drive("video.mp4")
+            convert_to_wav("video.mp4", "video.wav")
+            
+            cleaned = clean_text(text)
+            full_text = create_full_text(cleaned)
+            text_to_mp3(full_text, "text.mp3")
+            convert_to_wav("text.mp3", "text.wav")
+            
+            concat_wav_files("text.wav", "video.wav", "final.wav")
+            
+            upload_to_ymot("final.wav", upload_target_path)
 
-        maybe_send_tzintuk()    
+            for f in ["video.mp4", "video.wav", "text.mp3", "text.wav", "final.wav"]:
+                if os.path.exists(f): os.remove(f)
+            return
 
-        os.remove("audio.ogg")
-        os.remove("audio.wav")
+        # 🎥 וידאו ללא טקסט
+        if has_video:
+            video_file = await message.video.get_file()
+            await video_file.download_to_drive("video.mp4")
+            convert_to_wav("video.mp4", "video.wav")
+            
+            upload_to_ymot("video.wav", upload_target_path)
 
-    # טקסט בלבד
-    if text:
-        cleaned = clean_text(text)
-        full_text = create_full_text(cleaned)
-        text_to_mp3(full_text, "output.mp3")
-        convert_to_wav("output.mp3", "output.wav")
-        
-        # מעבירים את הנתיב הדינמי (או הראשי או 998)
-        upload_to_ymot("output.wav", upload_target_path)
+            os.remove("video.mp4")
+            os.remove("video.wav")
 
-        # צינתוק נשלח רק אם זה הנתיב הראשי
-        if upload_target_path == YMOT_PATH:
-            maybe_send_tzintuk()        
+        # 🎤 אודיו
+        if has_audio:
+            audio_file = await (message.audio or message.voice).get_file()
+            await audio_file.download_to_drive("audio.ogg")
+            convert_to_wav("audio.ogg", "audio.wav")
+            
+            upload_to_ymot("audio.wav", upload_target_path)
 
-        os.remove("output.mp3")
-        os.remove("output.wav")
+            os.remove("audio.ogg")
+            os.remove("audio.wav")
+
+        # 📝 טקסט בלבד
+        if text:
+            cleaned = clean_text(text)
+            full_text = create_full_text(cleaned)
+            text_to_mp3(full_text, "output.mp3")
+            convert_to_wav("output.mp3", "output.wav")
+            
+            upload_to_ymot("output.wav", upload_target_path)
+
+            os.remove("output.mp3")
+            os.remove("output.wav")
 
 # ♻️ שמירה על חיים
 from keep_alive import keep_alive
