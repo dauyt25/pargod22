@@ -9,7 +9,6 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
 
 # 🛠 הגדרת מפתח Gemini
-# וודא שהגדרת את GEMINI_API_KEY במשתני הסביבה ב-Render
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
     print("⚠️ אזהרה: GEMINI_API_KEY לא מוגדר. הבוט ייכשל בניסיון הקראה.")
@@ -19,7 +18,10 @@ else:
 # 🛠 משתנים מ־Render
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 YMOT_TOKEN = os.getenv("YMOT_TOKEN")
-YMOT_PATH = os.getenv("YMOT_PATH", "ivr2:/97")
+
+# הגדרת מזהי הערוצים (יש להגדיר ב-Environment Variables)
+CHANNEL_1_ID = os.getenv("CHANNEL_1_ID") # ערוץ 1: שלוחה 97, Charon, אוטו-מספור
+CHANNEL_2_ID = os.getenv("CHANNEL_2_ID") # ערוץ 2: שלוחה 54, Fenrir, קובץ M0000 תמיד
 
 def clean_text(text):
     """מנקה את הטקסט ממילים חסומות, קישורים וסימנים מיותרים"""
@@ -74,20 +76,21 @@ def clean_text(text):
 
     return text
 
-def generate_audio_with_gemini(text, filename='output.pcm'):
+def generate_audio_with_gemini(text, voice_name, filename='output.pcm'):
     """
     שולח טקסט למודל Gemini TTS ומקבל קובץ PCM גולמי.
-    *בוצע עדכון לבקש קצב קריאה מהיר (1.3) וטון דרמטי*
+    מקבל כעת פרמטר voice_name לבחירת הקול.
+    עודכן לקצב 1.2 כפי שהתבקש.
     """
-    print(f"🎙️ שולח ל-Gemini TTS: {text[:30]}...")
+    print(f"🎙️ שולח ל-Gemini TTS ({voice_name}): {text[:30]}...")
     try:
         # שימוש במודל ה-TTS החדש
         model = genai.GenerativeModel("models/gemini-2.5-flash-preview-tts")
         
-        # בניית הבקשה להקראה: שימוש בטקסט-לפרומפט (TTP) לבקשת מהירות
+        # בניית הבקשה להקראה: שימוש בטקסט-לפרומפט (TTP) לבקשת מהירות 1.2
         prompt = (
             f"Please read the following news update in Hebrew clearly, dramatically, "
-            f"and with a fast pace (like a 1.3 speed): {text}"
+            f"and with a fast pace (like a 1.2 speed): {text}"
         )
 
         response = model.generate_content(
@@ -97,8 +100,7 @@ def generate_audio_with_gemini(text, filename='output.pcm'):
                 "speech_config": {
                     "voice_config": {
                         "prebuilt_voice_config": {
-                            # הקול המבוקש
-                            "voice_name": "Fenrir" 
+                            "voice_name": voice_name
                         }
                     }
                 }
@@ -110,7 +112,7 @@ def generate_audio_with_gemini(text, filename='output.pcm'):
             audio_data = response.candidates[0].content.parts[0].inline_data.data
             with open(filename, 'wb') as f:
                 f.write(audio_data)
-            print("✅ אודיו נוצר בהצלחה (PCM format) עם קול Fenrir וקצב מוגבר.")
+            print(f"✅ אודיו נוצר בהצלחה (PCM format) עם קול {voice_name} וקצב מוגבר.")
         else:
             print("❌ לא התקבל מידע אודיו בתשובה.")
             raise Exception("Empty audio response from Gemini")
@@ -143,7 +145,11 @@ def convert_regular_to_wav(input_file, output_file='output.wav'):
         output_file, '-y'
     ])
 
-def upload_to_ymot(wav_file_path):
+def upload_to_ymot(wav_file_path, remote_path, auto_numbering=True):
+    """
+    מעלה קובץ לימות המשיח.
+    מקבל כעת path (תיקייה או קובץ מלא) ו-auto_numbering.
+    """
     url = 'https://call2all.co.il/ym/api/UploadFile'
     if not os.path.exists(wav_file_path):
         print("❌ הקובץ להעלאה לא נמצא:", wav_file_path)
@@ -153,13 +159,15 @@ def upload_to_ymot(wav_file_path):
         files = {'file': (os.path.basename(wav_file_path), f, 'audio/wav')}
         data = {
             'token': YMOT_TOKEN,
-            'path': YMOT_PATH,
+            'path': remote_path,
             'convertAudio': '1',
-            'autoNumbering': 'true'
         }
+        if auto_numbering:
+            data['autoNumbering'] = 'true'
+            
         try:
             response = requests.post(url, data=data, files=files)
-            print("📞 תגובת ימות:", response.text)
+            print(f"📞 תגובת ימות ({remote_path}):", response.text)
         except Exception as e:
             print(f"❌ שגיאה בהעלאה לימות: {e}")
 
@@ -167,6 +175,28 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.channel_post
     if not message:
         return
+
+    chat_id = str(update.effective_chat.id)
+    print(f"📨 הודעה התקבלה מערוץ: {chat_id}")
+
+    # הגדרות ברירת מחדל
+    ymot_path = os.getenv("YMOT_PATH", "ivr2:/97")
+    voice_name = "Fenrir"
+    auto_numbering = True
+
+    # לוגיקה לבחירת ערוץ
+    if chat_id == CHANNEL_1_ID:
+        print("🔹 זוהה ערוץ 1: הגדרות Charon, שלוחה 97")
+        ymot_path = "ivr2:/988"
+        voice_name = "Charon"
+        auto_numbering = True
+    elif chat_id == CHANNEL_2_ID:
+        print("🔹 זוהה ערוץ 2: הגדרות Fenrir, שלוחה 54 (קובץ M0000)")
+        ymot_path = "ivr2:/9999/M0000.wav" # שם קובץ ספציפי לדריסה
+        voice_name = "Fenrir"
+        auto_numbering = False # ביטול מספור אוטומטי כדי לדרוס
+    else:
+        print(f"🔸 ערוץ לא מוגדר ({chat_id}), משתמש בהגדרות ברירת מחדל/משתני סביבה.")
 
     text = message.text or message.caption
     has_video = message.video is not None
@@ -178,7 +208,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             video_file = await message.video.get_file()
             await video_file.download_to_drive("video.mp4")
             convert_regular_to_wav("video.mp4", "video.wav")
-            upload_to_ymot("video.wav")
+            upload_to_ymot("video.wav", ymot_path, auto_numbering)
         except Exception as e:
             print(f"Error handling video: {e}")
         finally:
@@ -196,7 +226,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             await audio_file.download_to_drive(filename)
             convert_regular_to_wav(filename, "audio.wav")
-            upload_to_ymot("audio.wav")
+            upload_to_ymot("audio.wav", ymot_path, auto_numbering)
         except Exception as e:
             print(f"Error handling audio: {e}")
         finally:
@@ -217,14 +247,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if cleaned_for_tts:
             try:
-                # 1. יצירת אודיו עם Gemini (מקבלים PCM)
-                generate_audio_with_gemini(cleaned_for_tts, "output.pcm")
+                # 1. יצירת אודיו עם Gemini (מקבלים PCM) עם הקול הנבחר
+                generate_audio_with_gemini(cleaned_for_tts, voice_name, "output.pcm")
                 
                 # 2. המרה מ-PCM ל-WAV של ימות
                 convert_pcm_to_wav("output.pcm", "output.wav")
                 
-                # 3. העלאה
-                upload_to_ymot("output.wav")
+                # 3. העלאה לנתיב הנבחר
+                upload_to_ymot("output.wav", ymot_path, auto_numbering)
             except Exception as e:
                 print(f"❌ כשל בתהליך ה-TTS: {e}")
             finally:
@@ -244,7 +274,7 @@ else:
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(MessageHandler(filters.ChatType.CHANNEL, handle_message))
 
-    print("🚀 הבוט (Gemini TTS) מאזין לערוץ ומעלה לשלוחה 🎧")
+    print("🚀 הבוט (Gemini TTS) מאזין ל-2 הערוצים ומעלה לשלוחות המתאימות 🎧")
     
     while True:
         try:
