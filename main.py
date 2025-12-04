@@ -192,7 +192,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         auto_numbering = True
     elif chat_id == CHANNEL_2_ID:
         print("🔹 זוהה ערוץ 2: הגדרות Fenrir, שלוחה 54 (קובץ M0000)")
-        ymot_path = "ivr2:/9999/M0000.wav" # שם קובץ ספציפי לדריסה
+        ymot_path = "ivr2:/000/M0000.wav" # שם קובץ ספציפי לדריסה
         voice_name = "Fenrir"
         auto_numbering = False # ביטול מספור אוטומטי כדי לדרוס
     else:
