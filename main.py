@@ -79,18 +79,18 @@ def clean_text(text):
 def generate_audio_with_gemini(text, voice_name, filename='output.pcm'):
     """
     שולח טקסט למודל Gemini TTS ומקבל קובץ PCM גולמי.
-    מקבל כעת פרמטר voice_name לבחירת הקול.
-    עודכן לקצב 1.2 כפי שהתבקש.
+    עודכן לקבלת הנחיה טבעית במקום מהירות מספרית.
     """
     print(f"🎙️ שולח ל-Gemini TTS ({voice_name}): {text[:30]}...")
     try:
         # שימוש במודל ה-TTS החדש
         model = genai.GenerativeModel("models/gemini-2.5-flash-preview-tts")
         
-        # בניית הבקשה להקראה: שימוש בטקסט-לפרומפט (TTP) לבקשת מהירות 1.2
+        # בניית הבקשה להקראה: שימוש בטקסט-לפרומפט (TTP)
+        # שיניתי כאן את ההנחיה מ-1.2 להנחיה מילולית
         prompt = (
-            f"Please read the following news update in Hebrew clearly, dramatically, "
-            f"and with a fast pace (like a 1.2 speed): {text}"
+            f"Please read the following news update in Hebrew clearly, "
+            f"slightly fast, and in an engaging and interesting manner: {text}"
         )
 
         response = model.generate_content(
@@ -112,7 +112,7 @@ def generate_audio_with_gemini(text, voice_name, filename='output.pcm'):
             audio_data = response.candidates[0].content.parts[0].inline_data.data
             with open(filename, 'wb') as f:
                 f.write(audio_data)
-            print(f"✅ אודיו נוצר בהצלחה (PCM format) עם קול {voice_name} וקצב מוגבר.")
+            print(f"✅ אודיו נוצר בהצלחה (PCM format) עם קול {voice_name} וסגנון מעניין.")
         else:
             print("❌ לא התקבל מידע אודיו בתשובה.")
             raise Exception("Empty audio response from Gemini")
