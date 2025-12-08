@@ -20,8 +20,8 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 YMOT_TOKEN = os.getenv("YMOT_TOKEN")
 
 # הגדרת מזהי הערוצים (יש להגדיר ב-Environment Variables)
-CHANNEL_1_ID = os.getenv("CHANNEL_1_ID") # ערוץ 1: שלוחה 97, Charon, אוטו-מספור
-CHANNEL_2_ID = os.getenv("CHANNEL_2_ID") # ערוץ 2: שלוחה 54, Fenrir, קובץ M0000 תמיד
+CHANNEL_1_ID = os.getenv("CHANNEL_1_ID") # ערוץ 1
+CHANNEL_2_ID = os.getenv("CHANNEL_2_ID") # ערוץ 2
 
 def clean_text(text):
     """מנקה את הטקסט ממילים חסומות, קישורים וסימנים מיותרים"""
@@ -79,15 +79,13 @@ def clean_text(text):
 def generate_audio_with_gemini(text, voice_name, filename='output.pcm'):
     """
     שולח טקסט למודל Gemini TTS ומקבל קובץ PCM גולמי.
-    עודכן לקבלת הנחיה טבעית במקום מהירות מספרית.
     """
     print(f"🎙️ שולח ל-Gemini TTS ({voice_name}): {text[:30]}...")
     try:
         # שימוש במודל ה-TTS החדש
         model = genai.GenerativeModel("models/gemini-2.5-flash-preview-tts")
         
-        # בניית הבקשה להקראה: שימוש בטקסט-לפרומפט (TTP)
-        # שיניתי כאן את ההנחיה מ-1.2 להנחיה מילולית
+        # בניית הבקשה להקראה
         prompt = (
             f"Please read the following news update in Hebrew clearly, "
             f"slightly fast, and in an engaging and interesting manner: {text}"
@@ -112,13 +110,33 @@ def generate_audio_with_gemini(text, voice_name, filename='output.pcm'):
             audio_data = response.candidates[0].content.parts[0].inline_data.data
             with open(filename, 'wb') as f:
                 f.write(audio_data)
-            print(f"✅ אודיו נוצר בהצלחה (PCM format) עם קול {voice_name} וסגנון מעניין.")
+            print(f"✅ אודיו נוצר בהצלחה (PCM format) עם קול {voice_name}.")
         else:
             print("❌ לא התקבל מידע אודיו בתשובה.")
             raise Exception("Empty audio response from Gemini")
 
     except Exception as e:
         print(f"❌ שגיאה ביצירת אודיו עם Gemini: {e}")
+        raise e
+
+def create_silent_wav(filename='silent.wav', duration=1):
+    """
+    יוצר קובץ WAV שקט (8kHz, Mono) באורך מוגדר בשניות.
+    משמש לדריסת הקובץ בשלוחה 54.
+    """
+    try:
+        subprocess.run([
+            'ffmpeg',
+            '-f', 'lavfi',               # שימוש בפילטר lavfi ליצירת מקור
+            '-i', 'anullsrc=r=8000:cl=mono', # מקור שקט: 8000Hz, מונו
+            '-t', str(duration),         # אורך בשניות
+            '-f', 'wav',                 # פורמט יציאה
+            filename,
+            '-y'                         # דריסה אם קיים מקומית
+        ], check=True)
+        print(f"✅ נוצר קובץ שקט: {filename}")
+    except subprocess.CalledProcessError as e:
+        print(f"❌ שגיאה ביצירת קובץ שקט: {e}")
         raise e
 
 def convert_pcm_to_wav(input_file, output_file='output.wav'):
@@ -129,7 +147,7 @@ def convert_pcm_to_wav(input_file, output_file='output.wav'):
     subprocess.run([
         'ffmpeg',
         '-f', 's16le',       # פורמט הקלט (Raw PCM Signed 16-bit Little Endian)
-        '-ar', '24000',      # קצב דגימה של המודל (בד"כ 24k במודלים אלו)
+        '-ar', '24000',      # קצב דגימה של המודל
         '-ac', '1',          # ערוץ אחד (מונו)
         '-i', input_file,    # קובץ הקלט
         '-ar', '8000',       # יעד: 8000Hz לימות המשיח
@@ -148,7 +166,6 @@ def convert_regular_to_wav(input_file, output_file='output.wav'):
 def upload_to_ymot(wav_file_path, remote_path, auto_numbering=True):
     """
     מעלה קובץ לימות המשיח.
-    מקבל כעת path (תיקייה או קובץ מלא) ו-auto_numbering.
     """
     url = 'https://call2all.co.il/ym/api/UploadFile'
     if not os.path.exists(wav_file_path):
@@ -187,18 +204,34 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # לוגיקה לבחירת ערוץ
     if chat_id == CHANNEL_1_ID:
         print("🔹 זוהה ערוץ 1: הגדרות Charon, שלוחה 97")
-        ymot_path = "ivr2:/988"
+        ymot_path = "ivr2:/988" # כפי שהופיע בקוד המקורי שלך
         voice_name = "Charon"
         auto_numbering = True
     elif chat_id == CHANNEL_2_ID:
         print("🔹 זוהה ערוץ 2: הגדרות Fenrir, שלוחה 54 (קובץ M0000)")
-        ymot_path = "ivr2:/000/M0000.wav" # שם קובץ ספציפי לדריסה
+        ymot_path = "ivr2:/000/M0000.wav" # כפי שהופיע בקוד המקורי שלך
         voice_name = "Fenrir"
         auto_numbering = False # ביטול מספור אוטומטי כדי לדרוס
     else:
-        print(f"🔸 ערוץ לא מוגדר ({chat_id}), משתמש בהגדרות ברירת מחדל/משתני סביבה.")
+        print(f"🔸 ערוץ לא מוגדר ({chat_id}), משתמש בהגדרות ברירת מחדל.")
 
     text = message.text or message.caption
+    
+    # --- תוספת: טיפול בנקודה בערוץ 2 (קובץ שקט) ---
+    if chat_id == CHANNEL_2_ID and text and text.strip() == ".":
+        print("🔹 זוהתה נקודה (.) בערוץ 2 - יצירת קובץ שקט לדריסה...")
+        try:
+            create_silent_wav("silent.wav", duration=1)
+            # מעלים את הקובץ השקט לנתיב של ערוץ 2 (M0000)
+            upload_to_ymot("silent.wav", ymot_path, auto_numbering=False)
+            print("✅ קובץ שקט (M0000) הועלה בהצלחה.")
+        except Exception as e:
+            print(f"❌ שגיאה בטיפול בקובץ השקט: {e}")
+        finally:
+            if os.path.exists("silent.wav"): os.remove("silent.wav")
+        return # עצור כאן, אל תמשיך לטיפול רגיל
+    # ---------------------------------------------
+
     has_video = message.video is not None
     has_audio = message.voice or message.audio
 
@@ -236,24 +269,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # טיפול בטקסט -> המרה לדיבור (Gemini TTS)
     if text:
         cleaned_text = clean_text(text)
-        # ניקוי נוסף עבור ה-TTS (השארת אותיות ומספרים בלבד)
+        # ניקוי נוסף עבור ה-TTS
         cleaned_for_tts = re.sub(r'[^0-9א-ת\s.,!?()\u0590-\u05FF]', '', cleaned_text)
         cleaned_for_tts = re.sub(r'\s+', ' ', cleaned_for_tts).strip()
 
-        # הסרת מספרי טלפון (כפי שהיה בקוד המקורי)
+        # הסרת מספרי טלפון
         phone_number_regex = r'\b(\d[\s-]?){9,11}\d\b'
         cleaned_for_tts = re.sub(phone_number_regex, '', cleaned_for_tts)
         cleaned_for_tts = re.sub(r'\s+', ' ', cleaned_for_tts).strip()
 
         if cleaned_for_tts:
             try:
-                # 1. יצירת אודיו עם Gemini (מקבלים PCM) עם הקול הנבחר
+                # 1. יצירת אודיו עם Gemini
                 generate_audio_with_gemini(cleaned_for_tts, voice_name, "output.pcm")
                 
-                # 2. המרה מ-PCM ל-WAV של ימות
+                # 2. המרה מ-PCM ל-WAV
                 convert_pcm_to_wav("output.pcm", "output.wav")
                 
-                # 3. העלאה לנתיב הנבחר
+                # 3. העלאה
                 upload_to_ymot("output.wav", ymot_path, auto_numbering)
             except Exception as e:
                 print(f"❌ כשל בתהליך ה-TTS: {e}")
