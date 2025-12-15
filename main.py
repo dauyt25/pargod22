@@ -202,12 +202,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     auto_numbering = True
 
     # לוגיקה לבחירת ערוץ
-    if chat_id == CHANNEL_1_ID:
+    if chat_id == CHANNEL_2_ID:
         print("🔹 זוהה ערוץ 1: הגדרות Charon, שלוחה 97")
         ymot_path = "ivr2:/988" # כפי שהופיע בקוד המקורי שלך
         voice_name = "Charon"
         auto_numbering = True
-    elif chat_id == CHANNEL_2_ID:
+    elif chat_id == CHANNEL_1_ID:
         print("🔹 זוהה ערוץ 2: הגדרות Fenrir, שלוחה 54 (קובץ M0000)")
         ymot_path = "ivr2:/000/M0000.wav" # כפי שהופיע בקוד המקורי שלך
         voice_name = "Fenrir"
@@ -218,7 +218,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = message.text or message.caption
     
     # --- תוספת: טיפול בנקודה בערוץ 2 (קובץ שקט) ---
-    if chat_id == CHANNEL_2_ID and text and text.strip() == ".":
+    if chat_id == CHANNEL_1_ID and text and text.strip() == ".":
         print("🔹 זוהתה נקודה (.) בערוץ 2 - יצירת קובץ שקט לדריסה...")
         try:
             create_silent_wav("silent.wav", duration=1)
